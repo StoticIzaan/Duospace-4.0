@@ -1,12 +1,12 @@
 
-import { User, DuoSpace, AuthSession, Message } from '../types';
+import { User, DuoSpace, AuthSession, Message, JoinRequest } from '../types';
 
-const DB_KEY = 'duospace_v8_db';
-const SESSION_KEY = 'duospace_v8_session';
+const DB_KEY = 'duospace_v9_db';
+const SESSION_KEY = 'duospace_v9_session';
 
 const getDB = () => {
   const data = localStorage.getItem(DB_KEY);
-  return data ? JSON.parse(data) : { spaces: [] as DuoSpace[] };
+  return data ? JSON.parse(data) : { spaces: [] as DuoSpace[], publicRegistry: [] as { username: string, spaceId: string }[] };
 };
 
 const saveDB = (db: any) => localStorage.setItem(DB_KEY, JSON.stringify(db));
@@ -18,6 +18,11 @@ export const getSession = (): AuthSession | null => {
 
 export const saveSession = (session: AuthSession) => {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  // Also register in public registry for search
+  const db = getDB();
+  // Cleanup old entries for same user
+  db.publicRegistry = db.publicRegistry.filter((r: any) => r.username !== session.user.username);
+  saveDB(db);
 };
 
 export const clearSession = () => localStorage.removeItem(SESSION_KEY);
@@ -31,88 +36,57 @@ export const createSpace = (user: User, name: string): DuoSpace => {
     code: Math.random().toString(36).substring(2, 8).toUpperCase(),
     theme: 'violet',
     members: [user],
+    requests: [],
     activeGame: { board: Array(9).fill(null), status: 'waiting' },
     messages: []
   };
   db.spaces.push(newSpace);
+  // Add to search registry
+  db.publicRegistry.push({ username: user.username, spaceId: newSpace.id });
   saveDB(db);
   return newSpace;
 };
 
-export const joinSpace = (user: User, input: string): DuoSpace => {
+export const searchByUsername = (query: string): DuoSpace[] => {
   const db = getDB();
-  const cleanInput = input.trim();
-  
-  // 1. Check if it's a long base64 Sync Key
-  if (cleanInput.length > 20) {
-    try {
-      return importSpace(cleanInput, user);
-    } catch (e) {
-      console.error("Portal Error", e);
-    }
-  }
+  const registryHits = db.publicRegistry.filter((r: any) => 
+    r.username.toLowerCase().includes(query.toLowerCase())
+  );
+  return registryHits.map((h: any) => db.spaces.find((s: DuoSpace) => s.id === h.spaceId)).filter(Boolean);
+};
 
-  // 2. Local lookup (same device)
-  let space = db.spaces.find((s: DuoSpace) => s.code === cleanInput.toUpperCase());
+export const sendJoinRequest = (user: User, spaceId: string) => {
+  const db = getDB();
+  const space = db.spaces.find((s: DuoSpace) => s.id === spaceId);
+  if (!space) return;
   
-  if (!space) {
-    throw new Error("Dimension not found. Use a Sync Link to join from another device.");
-  }
-  
-  // Add member
   const alreadyMember = space.members.some((m: User) => m.id === user.id);
-  if (!alreadyMember) {
-    if (space.members.length >= 2) throw new Error("This dimension is full.");
-    space.members.push(user);
-    space.activeGame.status = 'active';
-  }
+  const alreadyRequested = space.requests.some((r: JoinRequest) => r.fromUser.id === user.id);
   
-  saveDB(db);
-  return space;
-};
-
-export const exportSpace = (spaceId: string): string => {
-  const space = getSpace(spaceId);
-  if (!space) return '';
-  // Encodes the entire current state including messages for transfer
-  return btoa(JSON.stringify(space));
-};
-
-export const importSpace = (portalKey: string, user: User): DuoSpace => {
-  try {
-    const spaceData: DuoSpace = JSON.parse(atob(portalKey.trim()));
-    const db = getDB();
-    
-    // Auto-join the importing user
-    const alreadyMember = spaceData.members.some((m: User) => m.id === user.id);
-    if (!alreadyMember && spaceData.members.length < 2) {
-      spaceData.members.push(user);
-    }
-
-    const existingIndex = db.spaces.findIndex((s: DuoSpace) => s.id === spaceData.id);
-    if (existingIndex !== -1) {
-      // Refresh local copy with portal data
-      db.spaces[existingIndex] = { 
-        ...spaceData, 
-        // Merge messages to ensure none are lost
-        messages: mergeMessages(db.spaces[existingIndex].messages, spaceData.messages)
-      };
-    } else {
-      db.spaces.push(spaceData);
-    }
-    
+  if (!alreadyMember && !alreadyRequested) {
+    space.requests.push({
+      id: Math.random().toString(36).substring(2, 11),
+      fromUser: user,
+      spaceId: space.id,
+      spaceName: space.name,
+      timestamp: Date.now()
+    });
     saveDB(db);
-    return spaceData;
-  } catch (e) {
-    throw new Error("Invalid or corrupted Sync Link.");
   }
 };
 
-const mergeMessages = (local: Message[], remote: Message[]) => {
-  const map = new Map();
-  local.forEach(m => map.set(m.id, m));
-  remote.forEach(m => map.set(m.id, m));
-  return Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+export const acceptRequest = (spaceId: string, requestId: string) => {
+  const db = getDB();
+  const space = db.spaces.find((s: DuoSpace) => s.id === spaceId);
+  if (!space) return;
+  
+  const request = space.requests.find((r: JoinRequest) => r.id === requestId);
+  if (request) {
+    space.members.push(request.fromUser);
+    space.requests = space.requests.filter((r: JoinRequest) => r.id !== requestId);
+    space.activeGame.status = 'active';
+    saveDB(db);
+  }
 };
 
 export const getSpace = (spaceId: string): DuoSpace | undefined => {
@@ -131,5 +105,6 @@ export const updateSpace = (spaceId: string, updates: Partial<DuoSpace>) => {
 export const deleteSpace = (spaceId: string) => {
   const db = getDB();
   db.spaces = db.spaces.filter((s: DuoSpace) => s.id !== spaceId);
+  db.publicRegistry = db.publicRegistry.filter((r: any) => r.spaceId !== spaceId);
   saveDB(db);
 };
