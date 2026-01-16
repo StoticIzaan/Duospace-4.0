@@ -32,6 +32,11 @@ export interface Message {
   mediaUrl?: string; 
   fileName?: string;
   read?: boolean;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    content: string;
+  };
 }
 
 export interface GameState {

@@ -7,7 +7,7 @@ import {
   Trash2, X, Mic, Image as ImageIcon, CheckCheck, 
   Palette, StopCircle, Volume2, Camera, FileUp, 
   Pause, Check, Reply, Settings, Pencil, Eraser,
-  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal, Clock, Eye, EyeOff, Brain
+  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal, Clock, Eye, EyeOff, Brain, CornerUpLeft
 } from 'lucide-react';
 import * as API from './services/storage';
 import * as AI from './services/geminiService';
@@ -40,6 +40,7 @@ const InviteModal = ({ request, onAccept, onDecline }: { request: any, onAccept:
 const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, onCancel: () => void }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [color, setColor] = useState('#7c3aed');
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
   useEffect(() => {
@@ -50,10 +51,16 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 6;
-      ctx.strokeStyle = '#7c3aed';
+      ctx.strokeStyle = color;
       ctxRef.current = ctx;
     }
   }, []);
+
+  useEffect(() => {
+      if (ctxRef.current) {
+          ctxRef.current.strokeStyle = color;
+      }
+  }, [color]);
 
   const getPos = (e: any) => {
     const canvas = canvasRef.current!;
@@ -63,6 +70,8 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
+  const colors = ['#000000', '#ffffff', '#7c3aed', '#f43f5e', '#ef4444', '#0ea5e9', '#10b981', '#f59e0b'];
+
   return (
     <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in zoom-in">
       <Card className="w-full max-w-lg h-[80vh] flex flex-col !p-0 overflow-hidden bg-white dark:bg-slate-900 border-none shadow-5xl">
@@ -70,7 +79,7 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
            <h3 className="font-black text-xl dark:text-white">Sketch Dimension</h3>
            <button onClick={onCancel} className="p-2 text-slate-400 hover:text-rose-500 transition-colors"><X size={24}/></button>
         </div>
-        <div className="flex-1 bg-slate-50 dark:bg-slate-950 touch-none cursor-crosshair">
+        <div className="flex-1 bg-slate-50 dark:bg-slate-950 touch-none cursor-crosshair relative">
           <canvas ref={canvasRef}
             onMouseDown={(e) => { setIsDrawing(true); const p = getPos(e); ctxRef.current?.beginPath(); ctxRef.current?.moveTo(p.x, p.y); }}
             onMouseMove={(e) => { if (isDrawing) { const p = getPos(e); ctxRef.current?.lineTo(p.x, p.y); ctxRef.current?.stroke(); } }}
@@ -79,6 +88,17 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
             onTouchMove={(e) => { if (isDrawing) { const p = getPos(e); ctxRef.current?.lineTo(p.x, p.y); ctxRef.current?.stroke(); } }}
             onTouchEnd={() => { setIsDrawing(false); ctxRef.current?.closePath(); }}
             className="w-full h-full" />
+            
+             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 p-2 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-full shadow-lg">
+                {colors.map(c => (
+                    <button 
+                        key={c} 
+                        onClick={() => setColor(c)} 
+                        className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'}`}
+                        style={{ backgroundColor: c }}
+                    />
+                ))}
+            </div>
         </div>
         <div className="p-6 flex gap-3 bg-white dark:bg-slate-900">
           <Button variant="secondary" onClick={() => ctxRef.current?.clearRect(0,0,canvasRef.current!.width, canvasRef.current!.height)} className="flex-1">Clear</Button>
@@ -284,7 +304,8 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const [isPlayingDraft, setIsPlayingDraft] = useState(false);
   const [lastSeen, setLastSeen] = useState<number>(Date.now());
   const [now, setNow] = useState(Date.now());
-  
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -349,6 +370,10 @@ const Space = ({ user: currentUser }: { user: User }) => {
             API.updateSpace(spaceId!, { activeGame: payload.data.gameState });
             setSpace(prev => prev ? {...prev, activeGame: payload.data.gameState} : null);
         }
+        else if (payload.type === 'SYNC_SPACE' && payload.data.id === spaceId) {
+            setSpace(payload.data);
+            document.documentElement.setAttribute('data-theme', payload.data.theme);
+        }
         else if (payload.type === 'PING') {
             // Updated lastSeen implicitly above
         }
@@ -382,9 +407,16 @@ const Space = ({ user: currentUser }: { user: User }) => {
     const msg: Message = { 
       id: Date.now().toString(), senderId: currentUser.id, senderName: currentUser.username, 
       content: type === 'text' ? content : `Sent a ${type}`, timestamp: Date.now(), 
-      type, mediaUrl: (type !== 'text' ? content : undefined), fileName, read: false
+      type, mediaUrl: (type !== 'text' ? content : undefined), fileName, read: false,
+      replyTo: replyingTo ? {
+          id: replyingTo.id,
+          senderName: replyingTo.senderName,
+          content: replyingTo.type === 'text' ? replyingTo.content : `[${replyingTo.type}]`
+      } : undefined
     };
     
+    setReplyingTo(null);
+
     const newMsgs = [...space.messages, msg];
     API.updateSpace(space.id, { messages: newMsgs });
     setSpace({ ...space, messages: newMsgs });
@@ -431,6 +463,20 @@ const Space = ({ user: currentUser }: { user: User }) => {
           fromUsername: currentUser.username
       });
   }
+
+  const handleThemeChange = (t: ThemeColor) => {
+      if (!space) return;
+      const updatedSpace = { ...space, theme: t };
+      setSpace(updatedSpace);
+      API.updateSpace(space.id, { theme: t });
+      document.documentElement.setAttribute('data-theme', t);
+      
+      p2p.broadcast({
+          type: 'SYNC_SPACE',
+          data: updatedSpace,
+          fromUsername: currentUser.username
+      });
+  };
 
   const startVoice = async () => {
     try {
@@ -526,15 +572,22 @@ const Space = ({ user: currentUser }: { user: User }) => {
         {activeTab === 'chat' && (
           <div className="p-8 space-y-10 pb-56">
             {space.messages.map((m) => (
-              <div key={m.id} className={`flex flex-col ${m.senderId === currentUser.id ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-4 duration-700`}>
-                <div className={`px-8 py-5 rounded-[2.5rem] font-bold shadow-sm max-w-[88%] ${m.senderId === currentUser.id ? 'bg-vibe text-white rounded-tr-none shadow-2xl shadow-vibe/20' : m.senderId === 'ai' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 rounded-tl-none' : 'bg-white dark:bg-slate-800 dark:text-white rounded-tl-none border border-slate-50 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-none'}`}>
+              <div key={m.id} className={`flex flex-col ${m.senderId === currentUser.id ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-4 duration-700 group`}>
+                <div className={`px-8 py-5 rounded-[2.5rem] font-bold shadow-sm max-w-[88%] relative ${m.senderId === currentUser.id ? 'bg-vibe text-white rounded-tr-none shadow-2xl shadow-vibe/20' : m.senderId === 'ai' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 rounded-tl-none' : 'bg-white dark:bg-slate-800 dark:text-white rounded-tl-none border border-slate-50 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-none'}`}>
+                  {m.replyTo && (
+                    <div className={`mb-2 pb-2 border-b border-white/20 text-sm opacity-80 flex flex-col ${m.senderId === currentUser.id ? 'text-white/90' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <span className="text-[10px] font-black uppercase tracking-widest mb-1">{m.replyTo.senderName}</span>
+                        <span className="truncate italic line-clamp-1">{m.replyTo.content}</span>
+                    </div>
+                  )}
                   {m.type === 'image' && <img src={m.mediaUrl} className="rounded-3xl mb-3 w-full max-h-[30rem] object-cover shadow-inner" />}
                   {m.type === 'voice' && <audio src={m.mediaUrl} controls className="w-full h-12 mb-3 rounded-full overflow-hidden brightness-90" />}
                   {m.type === 'file' && <a href={m.mediaUrl} download={m.fileName} className="flex items-center gap-4 p-5 bg-slate-100/50 dark:bg-slate-700/50 rounded-3xl mb-3 border border-slate-200 dark:border-slate-600"><Paperclip size={24}/> <span className="text-sm truncate font-black uppercase tracking-widest">{m.fileName}</span></a>}
                   <p className="whitespace-pre-wrap leading-relaxed text-lg">{m.content}</p>
                 </div>
-                <div className="mt-3 px-4 flex items-center gap-2 opacity-60">
+                <div className="mt-3 px-4 flex items-center gap-4 opacity-60">
                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                   <button onClick={() => setReplyingTo(m)} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-vibe-primary"><CornerUpLeft size={16} /></button>
                    {m.senderId === currentUser.id && currentUser.settings.readReceipts && (m.read ? <div className="flex"><CheckCheck size={16} className="text-sky-300" /></div> : <Check size={16} />)}
                 </div>
               </div>
@@ -632,7 +685,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
                    <h4 className="text-xs font-black uppercase text-slate-400 tracking-[0.5em] px-2">Theme Accent</h4>
                    <div className="grid grid-cols-3 gap-4">
                       {(['violet', 'rose', 'red', 'sky', 'emerald', 'gold'] as ThemeColor[]).map(t => (
-                        <button key={t} onClick={() => API.updateSpace(space.id, { theme: t })} className={`h-16 rounded-[1.8rem] shadow-sm transition-all duration-300 ${space.theme === t ? 'ring-4 ring-vibe ring-offset-2 ring-offset-white dark:ring-offset-slate-900 scale-105' : 'opacity-40 hover:opacity-100'} ${t === 'violet' ? 'bg-violet-600' : t === 'rose' ? 'bg-rose-500' : t === 'red' ? 'bg-red-600' : t === 'sky' ? 'bg-sky-500' : t === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                        <button key={t} onClick={() => handleThemeChange(t)} className={`h-16 rounded-[1.8rem] shadow-sm transition-all duration-300 ${space.theme === t ? 'ring-4 ring-vibe ring-offset-2 ring-offset-white dark:ring-offset-slate-900 scale-105' : 'opacity-40 hover:opacity-100'} ${t === 'violet' ? 'bg-violet-600' : t === 'rose' ? 'bg-rose-500' : t === 'red' ? 'bg-red-600' : t === 'sky' ? 'bg-sky-500' : t === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                       ))}
                    </div>
                 </section>
@@ -646,7 +699,19 @@ const Space = ({ user: currentUser }: { user: User }) => {
 
       {activeTab === 'chat' && (
         <div className="fixed bottom-36 left-0 right-0 px-8 z-50">
-          <div className="max-w-5xl mx-auto glass p-4 rounded-[3.5rem] shadow-5xl border border-white/20 flex items-center gap-4 h-[5.5rem]">
+          <div className="max-w-5xl mx-auto glass rounded-[3.5rem] shadow-5xl border border-white/20 overflow-hidden relative">
+             {/* Reply Banner */}
+             {replyingTo && (
+               <div className="flex justify-between items-center px-6 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 animate-slide-up">
+                   <div className="flex flex-col overflow-hidden mr-4">
+                       <span className="text-[10px] font-black uppercase tracking-widest text-vibe-primary">Replying to {replyingTo.senderName}</span>
+                       <span className="text-xs text-slate-500 dark:text-slate-400 truncate mt-1">{replyingTo.content}</span>
+                   </div>
+                   <button onClick={() => setReplyingTo(null)} className="p-2 bg-slate-200 dark:bg-slate-700 rounded-full text-slate-500 hover:text-rose-500 transition-colors"><X size={14} /></button>
+               </div>
+             )}
+
+             <div className="p-4 flex items-center gap-4 h-[5.5rem]">
              {voiceDraft ? (
                 <div className="w-full flex items-center justify-between px-2 animate-in fade-in slide-in-from-bottom-2">
                     <audio ref={draftAudioRef} src={voiceDraft.url} onEnded={() => setIsPlayingDraft(false)} className="hidden" />
@@ -687,6 +752,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
                     )}
                 </>
              )}
+            </div>
           </div>
         </div>
       )}
