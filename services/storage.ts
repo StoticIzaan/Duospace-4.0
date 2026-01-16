@@ -1,8 +1,8 @@
 
-import { User, DuoSpace, AuthSession } from '../types';
+import { User, DuoSpace, AuthSession, Message } from '../types';
 
-const DB_KEY = 'duospace_v7_db';
-const SESSION_KEY = 'duospace_v7_session';
+const DB_KEY = 'duospace_v8_db';
+const SESSION_KEY = 'duospace_v8_session';
 
 const getDB = () => {
   const data = localStorage.getItem(DB_KEY);
@@ -43,23 +43,23 @@ export const joinSpace = (user: User, input: string): DuoSpace => {
   const db = getDB();
   const cleanInput = input.trim();
   
-  // 1. Check if input is a base64 Sync Key/Portal
+  // 1. Check if it's a long base64 Sync Key
   if (cleanInput.length > 20) {
     try {
       return importSpace(cleanInput, user);
     } catch (e) {
-      // Not a key, continue to code check
+      console.error("Portal Error", e);
     }
   }
 
-  // 2. Try to find by local 6-digit code
+  // 2. Local lookup (same device)
   let space = db.spaces.find((s: DuoSpace) => s.code === cleanInput.toUpperCase());
   
   if (!space) {
-    throw new Error("Dimension not found. Use a Sync Link for cross-device access.");
+    throw new Error("Dimension not found. Use a Sync Link to join from another device.");
   }
   
-  // Add member if not present
+  // Add member
   const alreadyMember = space.members.some((m: User) => m.id === user.id);
   if (!alreadyMember) {
     if (space.members.length >= 2) throw new Error("This dimension is full.");
@@ -74,7 +74,7 @@ export const joinSpace = (user: User, input: string): DuoSpace => {
 export const exportSpace = (spaceId: string): string => {
   const space = getSpace(spaceId);
   if (!space) return '';
-  // Clean up data for transfer (reduce size)
+  // Encodes the entire current state including messages for transfer
   return btoa(JSON.stringify(space));
 };
 
@@ -82,17 +82,21 @@ export const importSpace = (portalKey: string, user: User): DuoSpace => {
   try {
     const spaceData: DuoSpace = JSON.parse(atob(portalKey.trim()));
     const db = getDB();
-    const existingIndex = db.spaces.findIndex((s: DuoSpace) => s.id === spaceData.id);
     
-    // Join the space automatically on import
+    // Auto-join the importing user
     const alreadyMember = spaceData.members.some((m: User) => m.id === user.id);
     if (!alreadyMember && spaceData.members.length < 2) {
       spaceData.members.push(user);
     }
 
+    const existingIndex = db.spaces.findIndex((s: DuoSpace) => s.id === spaceData.id);
     if (existingIndex !== -1) {
-      // Merge: Keep local messages, but update everything else
-      db.spaces[existingIndex] = { ...spaceData, messages: [...new Set([...db.spaces[existingIndex].messages, ...spaceData.messages])] };
+      // Refresh local copy with portal data
+      db.spaces[existingIndex] = { 
+        ...spaceData, 
+        // Merge messages to ensure none are lost
+        messages: mergeMessages(db.spaces[existingIndex].messages, spaceData.messages)
+      };
     } else {
       db.spaces.push(spaceData);
     }
@@ -100,8 +104,15 @@ export const importSpace = (portalKey: string, user: User): DuoSpace => {
     saveDB(db);
     return spaceData;
   } catch (e) {
-    throw new Error("Corrupted Portal Key.");
+    throw new Error("Invalid or corrupted Sync Link.");
   }
+};
+
+const mergeMessages = (local: Message[], remote: Message[]) => {
+  const map = new Map();
+  local.forEach(m => map.set(m.id, m));
+  remote.forEach(m => map.set(m.id, m));
+  return Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
 };
 
 export const getSpace = (spaceId: string): DuoSpace | undefined => {
