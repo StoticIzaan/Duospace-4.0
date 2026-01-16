@@ -14,6 +14,14 @@ export interface User {
   };
 }
 
+export interface JoinRequest {
+  id: string;
+  fromUser: User;
+  spaceId: string;
+  spaceName: string;
+  timestamp: number;
+}
+
 export interface Message {
   id: string;
   senderId: string;
@@ -24,9 +32,6 @@ export interface Message {
   mediaUrl?: string; 
   fileName?: string;
   read?: boolean;
-  replyToId?: string;
-  replyToName?: string;
-  replyContent?: string;
 }
 
 export interface GameState {
@@ -41,6 +46,7 @@ export interface DuoSpace {
   code: string;
   theme: ThemeColor;
   members: User[];
+  requests: JoinRequest[];
   activeGame: GameState;
   messages: Message[];
 }
