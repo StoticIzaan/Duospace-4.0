@@ -7,13 +7,34 @@ import {
   Trash2, X, Mic, Image as ImageIcon, CheckCheck, 
   Palette, StopCircle, Volume2, Camera, FileUp, 
   Pause, Check, Reply, Settings, Pencil, Eraser,
-  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal
+  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal, Clock
 } from 'lucide-react';
 import * as API from './services/storage';
 import * as AI from './services/geminiService';
 import { p2p } from './services/peerService';
 import { User, DuoSpace, Message, ThemeColor, JoinRequest, P2PPayload } from './types';
 import { Button, Input, Card, Badge } from './components/Common';
+
+// --- Invite Modal ---
+const InviteModal = ({ request, onAccept, onDecline }: { request: any, onAccept: () => void, onDecline: () => void }) => {
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+      <Card className="w-full max-w-sm !p-8 bg-white dark:bg-slate-900 border-none shadow-5xl text-center space-y-6">
+         <div className="w-20 h-20 bg-vibe mx-auto rounded-full flex items-center justify-center animate-bounce">
+            <Signal size={32} className="text-white" />
+         </div>
+         <div>
+            <h3 className="text-2xl font-black dark:text-white">Incoming Link</h3>
+            <p className="text-slate-500 font-bold mt-2">"{request.fromUsername}" wants to connect dimensions.</p>
+         </div>
+         <div className="flex gap-3">
+            <Button onClick={onDecline} variant="secondary" className="flex-1">Ignore</Button>
+            <Button onClick={onAccept} className="flex-1">Accept</Button>
+         </div>
+      </Card>
+    </div>
+  );
+};
 
 // --- Sub-component: Sketchpad ---
 const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, onCancel: () => void }) => {
@@ -76,7 +97,6 @@ const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const handleAuth = () => {
     if (!name.trim()) return;
     setLoading(true);
-    // Slight delay for effect
     setTimeout(() => {
       const user: User = {
         id: Math.random().toString(36).substring(2, 11),
@@ -118,42 +138,17 @@ const Dashboard = ({ user }: { user: User }) => {
   const [showCreate, setShowCreate] = useState(false);
   const [view, setView] = useState<'mine' | 'discover'>('mine');
   const [isOnline, setIsOnline] = useState(false);
+  const [incomingRequest, setIncomingRequest] = useState<P2PPayload | null>(null);
   const navigate = useNavigate();
 
-  // --- Core P2P Initialization ---
   useEffect(() => {
-    // Start P2P on mount
-    p2p.initialize(user.username, () => {
-        setIsOnline(true);
-    });
+    p2p.initialize(user.username, () => setIsOnline(true));
 
-    // Listen for P2P events
     const unsubscribe = p2p.subscribe((payload: P2PPayload) => {
         if (payload.type === 'JOIN_REQUEST') {
-            // Auto accept for seamless demo feel or show popup?
-            // For now, let's just alert
-            const allow = confirm(`Incoming connection request from "${payload.fromUsername}". Accept?`);
-            if (allow) {
-                // Find a space to add them to, or create one
-                let space = spaces.find(s => s.ownerId === user.id);
-                if (!space) space = API.createSpace(user, `${user.username} & ${payload.fromUsername}`);
-                
-                // Add member via P2P
-                const updatedSpace = { ...space, members: [...space.members, payload.data.user] };
-                API.saveSpace(updatedSpace);
-                
-                // Send back the space data
-                p2p.sendTo(payload.fromUsername, {
-                    type: 'ACCEPT_JOIN',
-                    data: updatedSpace,
-                    fromUsername: user.username
-                });
-                
-                setSpaces(API.getMySpaces(user.id));
-            }
+            setIncomingRequest(payload);
         }
         else if (payload.type === 'ACCEPT_JOIN') {
-            // We have been accepted! Save the space
             API.saveSpace(payload.data);
             setSpaces(API.getMySpaces(user.id));
             alert(`Connected to ${payload.fromUsername}!`);
@@ -162,9 +157,8 @@ const Dashboard = ({ user }: { user: User }) => {
     });
 
     return () => unsubscribe();
-  }, [user.id, spaces]);
+  }, [user.id]);
 
-  // Polling for local updates
   useEffect(() => {
     const fetch = () => setSpaces(API.getMySpaces(user.id));
     fetch(); const interval = setInterval(fetch, 2000); return () => clearInterval(interval);
@@ -173,8 +167,6 @@ const Dashboard = ({ user }: { user: User }) => {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setSearchStatus('searching');
-    
-    // Attempt P2P Connection
     const success = await p2p.connect(searchQuery);
     setSearchStatus(success ? 'found' : 'offline');
   };
@@ -185,11 +177,32 @@ const Dashboard = ({ user }: { user: User }) => {
           data: { user },
           fromUsername: user.username
       });
-      alert(`Signal sent to ${searchQuery}. Waiting for them to accept...`);
+      alert(`Signal sent to ${searchQuery}. They must accept the popup.`);
+  };
+
+  const acceptInvite = () => {
+     if (!incomingRequest) return;
+     const payload = incomingRequest;
+     let space = spaces.find(s => s.ownerId === user.id);
+     if (!space) space = API.createSpace(user, `${user.username} & ${payload.fromUsername}`);
+     
+     const updatedSpace = { ...space, members: [...space.members, payload.data.user] };
+     API.saveSpace(updatedSpace);
+     
+     p2p.sendTo(payload.fromUsername, {
+        type: 'ACCEPT_JOIN',
+        data: updatedSpace,
+        fromUsername: user.username
+     });
+     
+     setSpaces(API.getMySpaces(user.id));
+     setIncomingRequest(null);
   };
 
   return (
     <div className="max-w-md mx-auto h-full flex flex-col p-8 justify-between bg-slate-50 dark:bg-slate-950 overflow-hidden transition-colors duration-500">
+      {incomingRequest && <InviteModal request={incomingRequest} onAccept={acceptInvite} onDecline={() => setIncomingRequest(null)} />}
+      
       <header className="flex justify-between items-center py-6">
         <div className="flex flex-col">
           <h2 className="text-4xl font-black dark:text-white tracking-tighter">Worlds</h2>
@@ -233,7 +246,7 @@ const Dashboard = ({ user }: { user: User }) => {
                     <Signal className="text-vibe-primary shrink-0" size={24}/>
                     <div>
                         <h4 className="font-black text-sm dark:text-white uppercase mb-1">Direct Neural Link</h4>
-                        <p className="text-xs text-slate-500 leading-relaxed">Search for a username to establish a direct P2P tunnel. <strong>Both devices must be online</strong> to handshake.</p>
+                        <p className="text-xs text-slate-500 leading-relaxed">Search for a username. <strong>Both devices must be online</strong> to handshake.</p>
                     </div>
                 </div>
             </div>
@@ -257,7 +270,7 @@ const Dashboard = ({ user }: { user: User }) => {
                 <div className="text-center py-8 opacity-60">
                     <Signal size={48} className="mx-auto mb-3 text-rose-400" />
                     <h4 className="font-black text-rose-500">No Signal</h4>
-                    <p className="text-xs mt-1">User is offline or does not exist.</p>
+                    <p className="text-xs mt-1">User is offline. Keep this tab open.</p>
                 </div>
             )}
           </div>
@@ -289,33 +302,67 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [showSketchpad, setShowSketchpad] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [lastSeen, setLastSeen] = useState<number>(Date.now());
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Initial Load
     const s = API.getSpace(spaceId!);
     if (s) {
         setSpace(s);
         document.documentElement.setAttribute('data-theme', s.theme);
         if (currentUser.settings.darkMode) document.documentElement.classList.add('dark');
         else document.documentElement.classList.remove('dark');
+        // Mark all as read
+        const updatedMsgs = s.messages.map(m => m.senderId !== currentUser.id ? {...m, read: true} : m);
+        API.updateSpace(s.id, { messages: updatedMsgs });
+        
+        // Broadcast read receipt
+        p2p.broadcast({
+           type: 'READ_RECEIPT',
+           data: { spaceId: s.id, userId: currentUser.id },
+           fromUsername: currentUser.username
+        });
     } else navigate('/');
 
-    // Subscribe to P2P updates for this space
     const unsubscribe = p2p.subscribe((payload: P2PPayload) => {
+        setLastSeen(Date.now());
         if (payload.type === 'NEW_MESSAGE' && payload.data.spaceId === spaceId) {
-            API.addMessageToSpace(spaceId!, payload.data.message);
-            // Refresh state
-            const updated = API.getSpace(spaceId!);
-            if(updated) setSpace(updated);
+            const msg = payload.data.message;
+            // Mark incoming as read immediately if we are looking at it
+            const msgToSave = { ...msg, read: true };
+            API.addMessageToSpace(spaceId!, msgToSave);
+            
+            p2p.broadcast({
+              type: 'READ_RECEIPT',
+              data: { spaceId: spaceId, userId: currentUser.id },
+              fromUsername: currentUser.username
+            });
+
+            setSpace(prev => {
+               if(!prev) return null;
+               const exists = prev.messages.find(m => m.id === msg.id);
+               if(exists) return prev;
+               return {...prev, messages: [...prev.messages, msgToSave].sort((a,b)=>a.timestamp-b.timestamp)};
+            });
+        }
+        else if (payload.type === 'READ_RECEIPT' && payload.data.spaceId === spaceId) {
+             // Mark my messages as read
+             setSpace(prev => {
+                if(!prev) return null;
+                const newMsgs = prev.messages.map(m => m.senderId === currentUser.id ? {...m, read: true} : m);
+                API.updateSpace(spaceId!, {messages: newMsgs});
+                return {...prev, messages: newMsgs};
+             });
         }
         else if (payload.type === 'GAME_MOVE' && payload.data.spaceId === spaceId) {
             API.updateSpace(spaceId!, { activeGame: payload.data.gameState });
-             const updated = API.getSpace(spaceId!);
-            if(updated) setSpace(updated);
+            setSpace(prev => prev ? {...prev, activeGame: payload.data.gameState} : null);
+        }
+        else if (payload.type === 'PING') {
+            // Update last seen
         }
     });
 
@@ -332,12 +379,10 @@ const Space = ({ user: currentUser }: { user: User }) => {
       type, mediaUrl: (type !== 'text' ? content : undefined), fileName, read: false
     };
     
-    // Save locally
     const newMsgs = [...space.messages, msg];
     API.updateSpace(space.id, { messages: newMsgs });
     setSpace({ ...space, messages: newMsgs });
 
-    // Broadcast via HoloNet
     p2p.broadcast({
         type: 'NEW_MESSAGE',
         data: { spaceId: space.id, message: msg },
@@ -396,7 +441,6 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
     const reader = new FileReader();
     reader.onload = () => {
       const type = file.type.startsWith('image/') ? 'image' : 'file';
@@ -421,6 +465,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
              <div className={`w-2 h-2 rounded-full ${isAlone ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'}`}></div>
              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">{isAlone ? 'Awaiting Connection' : 'Neural Link Active'}</span>
           </div>
+          {!isAlone && <p className="text-[9px] text-slate-400 font-bold mt-1">Last Active: Just now</p>}
         </div>
         <button onClick={() => setActiveTab('vibe')} className="p-3 bg-vibe-soft text-vibe-primary rounded-2xl active:scale-90 transition-all"><Settings size={24} /></button>
       </header>
@@ -438,7 +483,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
                 </div>
                 <div className="mt-3 px-4 flex items-center gap-2 opacity-60">
                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                   {m.senderId === currentUser.id && <CheckCheck size={16} className="text-vibe-primary" />}
+                   {m.senderId === currentUser.id && (m.read ? <div className="flex"><CheckCheck size={16} className="text-sky-300" /></div> : <Check size={16} />)}
                 </div>
               </div>
             ))}

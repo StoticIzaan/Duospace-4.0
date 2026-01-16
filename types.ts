@@ -56,7 +56,7 @@ export interface AuthSession {
 }
 
 // P2P Types
-export type P2PMessageType = 'JOIN_REQUEST' | 'ACCEPT_JOIN' | 'SYNC_SPACE' | 'NEW_MESSAGE' | 'GAME_MOVE' | 'PING';
+export type P2PMessageType = 'JOIN_REQUEST' | 'ACCEPT_JOIN' | 'SYNC_SPACE' | 'NEW_MESSAGE' | 'GAME_MOVE' | 'PING' | 'READ_RECEIPT';
 
 export interface P2PPayload {
   type: P2PMessageType;

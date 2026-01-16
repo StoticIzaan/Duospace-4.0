@@ -15,17 +15,21 @@ class P2PService {
   initialize(username: string, onReady: () => void) {
     if (this.peer) return;
     this.username = username;
-    // Deterministic Peer ID based on username so others can find you
-    // sanitized to be url safe
     const sanitized = username.toLowerCase().replace(/[^a-z0-9]/g, '');
     this.peerId = `duospace-v11-${sanitized}`;
 
     console.log("Initializing HoloNet Node:", this.peerId);
 
     try {
-        // PeerJS class is a named export in newer versions
         this.peer = new Peer(this.peerId, {
-            debug: 1
+            debug: 1,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
+            }
         });
 
         this.peer.on('open', (id) => {
@@ -41,11 +45,18 @@ class P2PService {
 
         this.peer.on('error', (err: any) => {
             console.error('HoloNet Error:', err);
-            // Handle ID taken (user already online elsewhere)
             if (err.type === 'unavailable-id') {
-                alert(`User "${username}" is already active on another device. Please close the other tab or use a different name.`);
+                alert(`User "${username}" is already active. Please close other tabs.`);
             }
         });
+        
+        // Keep-alive heartbeat
+        setInterval(() => {
+           if (this.isOnline) {
+             this.broadcast({ type: 'PING', data: {}, fromUsername: this.username });
+           }
+        }, 15000);
+
     } catch (e) {
         console.error("PeerJS Failed", e);
     }
@@ -60,28 +71,33 @@ class P2PService {
         const targetId = `duospace-v11-${sanitized}`;
 
         if (this.connections.has(targetId)) {
-            resolve(true);
-            return;
+            // Already connected, just ensure it's open
+            const c = this.connections.get(targetId);
+            if(c?.open) { resolve(true); return; }
         }
 
         console.log("Attempting Neural Link to:", targetId);
         const conn = this.peer.connect(targetId, { reliable: true });
 
+        const timeout = setTimeout(() => {
+            if(!conn.open) {
+                console.warn("Connection timed out");
+                resolve(false); 
+            }
+        }, 5000);
+
         conn.on('open', () => {
+            clearTimeout(timeout);
             console.log("Neural Link Established:", targetId);
             this.setupConnection(conn);
             resolve(true);
         });
 
         conn.on('error', (err) => {
+            clearTimeout(timeout);
             console.warn("Connection failed", err);
             resolve(false);
         });
-
-        // Timeout if user is offline
-        setTimeout(() => {
-            if (!conn.open) resolve(false);
-        }, 3000);
       });
   }
 
@@ -89,7 +105,7 @@ class P2PService {
       this.connections.set(conn.peer, conn);
       
       conn.on('data', (data: any) => {
-          console.log("Received Data Packet:", data);
+          console.log("RX:", data);
           this.listeners.forEach(l => l(data as P2PPayload));
       });
 
@@ -99,22 +115,21 @@ class P2PService {
       });
   }
 
-  // Broadcast to all connected peers
   broadcast(payload: P2PPayload) {
       this.connections.forEach(conn => {
           if (conn.open) conn.send(payload);
       });
   }
 
-  // Send to specific user
   sendTo(targetUsername: string, payload: P2PPayload) {
       const sanitized = targetUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
       const targetId = `duospace-v11-${sanitized}`;
       const conn = this.connections.get(targetId);
+      
       if (conn && conn.open) {
           conn.send(payload);
       } else {
-          // Try to connect then send
+          // Retry connection then send
           this.connect(targetUsername).then(success => {
               if (success) {
                   const newConn = this.connections.get(targetId);
