@@ -1,4 +1,5 @@
-import { User } from '../types';
+import Peer, { type DataConnection } from 'peerjs';
+
 
 type PeerType = any;
 type DataConnectionType = any;
