@@ -7,7 +7,7 @@ import {
   Trash2, X, Mic, Image as ImageIcon, CheckCheck, 
   Palette, StopCircle, Volume2, Camera, FileUp, 
   Pause, Check, Reply, Settings, Pencil, Eraser,
-  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal, Clock
+  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal, Clock, Eye, EyeOff, Brain
 } from 'lucide-react';
 import * as API from './services/storage';
 import * as AI from './services/geminiService';
@@ -303,10 +303,14 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const [showSketchpad, setShowSketchpad] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [lastSeen, setLastSeen] = useState<number>(Date.now());
+  const [now, setNow] = useState(Date.now());
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  // Ref to access current user settings inside closures if needed, though we use state here
+  const userSettingsRef = useRef(currentUser.settings);
+  useEffect(() => { userSettingsRef.current = currentUser.settings; }, [currentUser.settings]);
 
   useEffect(() => {
     const s = API.getSpace(spaceId!);
@@ -315,31 +319,34 @@ const Space = ({ user: currentUser }: { user: User }) => {
         document.documentElement.setAttribute('data-theme', s.theme);
         if (currentUser.settings.darkMode) document.documentElement.classList.add('dark');
         else document.documentElement.classList.remove('dark');
-        // Mark all as read
+        
+        // Mark as read only if receipts enabled and we are viewing
         const updatedMsgs = s.messages.map(m => m.senderId !== currentUser.id ? {...m, read: true} : m);
         API.updateSpace(s.id, { messages: updatedMsgs });
         
-        // Broadcast read receipt
-        p2p.broadcast({
-           type: 'READ_RECEIPT',
-           data: { spaceId: s.id, userId: currentUser.id },
-           fromUsername: currentUser.username
-        });
+        if (currentUser.settings.readReceipts) {
+            p2p.broadcast({
+               type: 'READ_RECEIPT',
+               data: { spaceId: s.id, userId: currentUser.id },
+               fromUsername: currentUser.username
+            });
+        }
     } else navigate('/');
 
     const unsubscribe = p2p.subscribe((payload: P2PPayload) => {
         setLastSeen(Date.now());
         if (payload.type === 'NEW_MESSAGE' && payload.data.spaceId === spaceId) {
             const msg = payload.data.message;
-            // Mark incoming as read immediately if we are looking at it
             const msgToSave = { ...msg, read: true };
             API.addMessageToSpace(spaceId!, msgToSave);
             
-            p2p.broadcast({
-              type: 'READ_RECEIPT',
-              data: { spaceId: spaceId, userId: currentUser.id },
-              fromUsername: currentUser.username
-            });
+            if (userSettingsRef.current.readReceipts) {
+                p2p.broadcast({
+                  type: 'READ_RECEIPT',
+                  data: { spaceId: spaceId, userId: currentUser.id },
+                  fromUsername: currentUser.username
+                });
+            }
 
             setSpace(prev => {
                if(!prev) return null;
@@ -349,7 +356,6 @@ const Space = ({ user: currentUser }: { user: User }) => {
             });
         }
         else if (payload.type === 'READ_RECEIPT' && payload.data.spaceId === spaceId) {
-             // Mark my messages as read
              setSpace(prev => {
                 if(!prev) return null;
                 const newMsgs = prev.messages.map(m => m.senderId === currentUser.id ? {...m, read: true} : m);
@@ -362,14 +368,32 @@ const Space = ({ user: currentUser }: { user: User }) => {
             setSpace(prev => prev ? {...prev, activeGame: payload.data.gameState} : null);
         }
         else if (payload.type === 'PING') {
-            // Update last seen
+            // Updated lastSeen implicitly above
         }
     });
+    
+    // Update 'now' for relative time display
+    const timeInterval = setInterval(() => setNow(Date.now()), 10000);
 
-    return () => unsubscribe();
-  }, [spaceId]);
+    return () => {
+        unsubscribe();
+        clearInterval(timeInterval);
+    };
+  }, [spaceId, currentUser.id]); // Re-sub if ID changes (rare), settings ref handles the rest
 
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [space?.messages, aiLoading]);
+
+  const getTimeAgo = (timestamp: number) => {
+      // Logic: If *I* have last seen disabled, I shouldn't see others (privacy reciprocity)
+      if (!currentUser.settings.showLastSeen) return "Hidden";
+
+      const diff = Math.floor((now - timestamp) / 1000);
+      if (diff < 20) return "Online"; 
+      if (diff < 60) return "Active 1m ago";
+      const mins = Math.floor(diff / 60);
+      if (mins < 60) return `Active ${mins}m ago`;
+      return "Away";
+  };
 
   const sendMessage = async (type: 'text' | 'image' | 'voice' | 'file', content: string, fileName?: string) => {
     if (!space) return;
@@ -390,17 +414,28 @@ const Space = ({ user: currentUser }: { user: User }) => {
     });
     
     if (type === 'text' && content.toLowerCase().includes('@ai')) {
-      setAiLoading(true);
-      const reply = await AI.getAiResponse(content, newMsgs);
-      const aiMsg: Message = { 
-          id: 'ai-'+Date.now(), senderId: 'ai', senderName: 'Duo AI', 
-          content: reply, timestamp: Date.now(), type: 'ai' 
-      };
-      
-      const aiMsgs = [...newMsgs, aiMsg];
-      API.updateSpace(space.id, { messages: aiMsgs });
-      setSpace({ ...space, messages: aiMsgs });
-      setAiLoading(false);
+      if (currentUser.settings.aiInChat) {
+          setAiLoading(true);
+          const reply = await AI.getAiResponse(content, newMsgs);
+          const aiMsg: Message = { 
+              id: 'ai-'+Date.now(), senderId: 'ai', senderName: 'Duo AI', 
+              content: reply, timestamp: Date.now(), type: 'ai' 
+          };
+          
+          const aiMsgs = [...newMsgs, aiMsg];
+          API.updateSpace(space.id, { messages: aiMsgs });
+          setSpace({ ...space, messages: aiMsgs });
+          setAiLoading(false);
+
+          // FIX: Broadcast AI response to the other user
+          p2p.broadcast({
+            type: 'NEW_MESSAGE',
+            data: { spaceId: space.id, message: aiMsg },
+            fromUsername: 'Duo AI'
+          });
+      } else {
+          // AI disabled in settings
+      }
     }
   };
 
@@ -450,6 +485,12 @@ const Space = ({ user: currentUser }: { user: User }) => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const updateSetting = (key: keyof User['settings'], val: any) => {
+      const newSettings = { ...currentUser.settings, [key]: val };
+      API.saveSession({ user: { ...currentUser, settings: newSettings } });
+      window.location.reload(); // Simple reload to apply all effects cleanly
+  };
+
   if (!space) return null;
   const isAlone = space.members.length < 2;
 
@@ -465,7 +506,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
              <div className={`w-2 h-2 rounded-full ${isAlone ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'}`}></div>
              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">{isAlone ? 'Awaiting Connection' : 'Neural Link Active'}</span>
           </div>
-          {!isAlone && <p className="text-[9px] text-slate-400 font-bold mt-1">Last Active: Just now</p>}
+          {!isAlone && currentUser.settings.showLastSeen && <p className="text-[9px] text-slate-400 font-bold mt-1 transition-all duration-500">{getTimeAgo(lastSeen)}</p>}
         </div>
         <button onClick={() => setActiveTab('vibe')} className="p-3 bg-vibe-soft text-vibe-primary rounded-2xl active:scale-90 transition-all"><Settings size={24} /></button>
       </header>
@@ -483,7 +524,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
                 </div>
                 <div className="mt-3 px-4 flex items-center gap-2 opacity-60">
                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                   {m.senderId === currentUser.id && (m.read ? <div className="flex"><CheckCheck size={16} className="text-sky-300" /></div> : <Check size={16} />)}
+                   {m.senderId === currentUser.id && currentUser.settings.readReceipts && (m.read ? <div className="flex"><CheckCheck size={16} className="text-sky-300" /></div> : <Check size={16} />)}
                 </div>
               </div>
             ))}
@@ -516,25 +557,76 @@ const Space = ({ user: currentUser }: { user: User }) => {
           <div className="p-10 space-y-12 animate-slide-up pb-48">
              <div className="flex justify-between items-center">
                 <h3 className="text-5xl font-black dark:text-white tracking-tighter">Settings</h3>
-                <button onClick={() => { 
-                   const newSettings = {...currentUser.settings, darkMode: !currentUser.settings.darkMode}; 
-                   API.saveSession({user: {...currentUser, settings: newSettings}});
-                   window.location.reload(); 
-                }} className="p-5 bg-white dark:bg-slate-900 rounded-[2rem] shadow-xl text-vibe-primary transition-all active:scale-90">
-                  {currentUser.settings.darkMode ? <Sun size={32}/> : <Moon size={32}/>}
-                </button>
              </div>
-             <Card className="!p-12 space-y-14 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[4rem]">
-                <section className="space-y-10">
-                   <h4 className="text-xs font-black uppercase text-slate-400 tracking-[0.5em]">Theme Accent</h4>
-                   <div className="grid grid-cols-3 gap-8">
+             <Card className="!p-8 space-y-8 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[3rem]">
+                <div className="space-y-6">
+                    {/* Dark Mode */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 rounded-2xl"><Moon size={24}/></div>
+                            <div>
+                                <h4 className="font-bold dark:text-white">Dark Mode</h4>
+                                <p className="text-xs text-slate-400 font-medium">Deep space aesthetics</p>
+                            </div>
+                        </div>
+                        <button onClick={() => updateSetting('darkMode', !currentUser.settings.darkMode)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.darkMode ? 'bg-vibe' : 'bg-slate-300'}`}>
+                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.darkMode ? 'translate-x-6' : ''}`} />
+                        </button>
+                    </div>
+
+                    {/* Last Seen */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-2xl"><Clock size={24}/></div>
+                            <div>
+                                <h4 className="font-bold dark:text-white">Last Seen</h4>
+                                <p className="text-xs text-slate-400 font-medium">Show activity status</p>
+                            </div>
+                        </div>
+                        <button onClick={() => updateSetting('showLastSeen', !currentUser.settings.showLastSeen)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.showLastSeen ? 'bg-vibe' : 'bg-slate-300'}`}>
+                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.showLastSeen ? 'translate-x-6' : ''}`} />
+                        </button>
+                    </div>
+
+                    {/* Read Receipts */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-sky-100 dark:bg-sky-900/30 text-sky-600 rounded-2xl"><CheckCheck size={24}/></div>
+                            <div>
+                                <h4 className="font-bold dark:text-white">Read Receipts</h4>
+                                <p className="text-xs text-slate-400 font-medium">Show blue checks</p>
+                            </div>
+                        </div>
+                        <button onClick={() => updateSetting('readReceipts', !currentUser.settings.readReceipts)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.readReceipts ? 'bg-vibe' : 'bg-slate-300'}`}>
+                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.readReceipts ? 'translate-x-6' : ''}`} />
+                        </button>
+                    </div>
+
+                    {/* Duo AI */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-2xl"><Brain size={24}/></div>
+                            <div>
+                                <h4 className="font-bold dark:text-white">Duo AI</h4>
+                                <p className="text-xs text-slate-400 font-medium">Summon via @ai</p>
+                            </div>
+                        </div>
+                        <button onClick={() => updateSetting('aiInChat', !currentUser.settings.aiInChat)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.aiInChat ? 'bg-vibe' : 'bg-slate-300'}`}>
+                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.aiInChat ? 'translate-x-6' : ''}`} />
+                        </button>
+                    </div>
+                </div>
+
+                <section className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+                   <h4 className="text-xs font-black uppercase text-slate-400 tracking-[0.5em] px-2">Theme Accent</h4>
+                   <div className="grid grid-cols-3 gap-4">
                       {(['violet', 'rose', 'red', 'sky', 'emerald', 'gold'] as ThemeColor[]).map(t => (
-                        <button key={t} onClick={() => API.updateSpace(space.id, { theme: t })} className={`h-20 rounded-[1.8rem] shadow-inner transition-all duration-700 ${space.theme === t ? 'ring-8 ring-vibe ring-offset-4 ring-offset-white dark:ring-offset-slate-900 scale-110' : 'opacity-30 hover:opacity-100'} ${t === 'violet' ? 'bg-violet-600' : t === 'rose' ? 'bg-rose-500' : t === 'red' ? 'bg-red-600' : t === 'sky' ? 'bg-sky-500' : t === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                        <button key={t} onClick={() => API.updateSpace(space.id, { theme: t })} className={`h-16 rounded-[1.8rem] shadow-sm transition-all duration-300 ${space.theme === t ? 'ring-4 ring-vibe ring-offset-2 ring-offset-white dark:ring-offset-slate-900 scale-105' : 'opacity-40 hover:opacity-100'} ${t === 'violet' ? 'bg-violet-600' : t === 'rose' ? 'bg-rose-500' : t === 'red' ? 'bg-red-600' : t === 'sky' ? 'bg-sky-500' : t === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                       ))}
                    </div>
                 </section>
-                <div className="pt-12 border-t border-slate-100 dark:border-slate-800">
-                  <Button variant="danger" className="w-full py-6 rounded-3xl font-black uppercase tracking-[0.3em]" onClick={() => { if(confirm("Purge Dimension?")) { API.deleteSpace(space.id); navigate('/'); }}}>Purge Dimension</Button>
+                <div className="pt-6">
+                  <Button variant="danger" className="w-full py-5 rounded-3xl font-black uppercase tracking-[0.3em]" onClick={() => { if(confirm("Purge Dimension?")) { API.deleteSpace(space.id); navigate('/'); }}}>Purge Dimension</Button>
                 </div>
              </Card>
           </div>

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Message } from '../types';
 
@@ -16,7 +17,7 @@ export const getAiResponse = async (userPrompt: string, history: Message[]) => {
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: `Context:\n${context}\n\nLatest Request: ${userPrompt}`,
       config: { systemInstruction }
     });
