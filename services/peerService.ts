@@ -1,9 +1,8 @@
-import { Peer, DataConnection } from 'peerjs';
-import { User, Message } from '../types';
+import { User } from '../types';
 
 class P2PService {
-    private peer: Peer | null = null;
-    private connection: DataConnection | null = null;
+    private peer: any = null;
+    private connection: any = null;
     private _user: User | null = null;
     private _onMessage: ((data: any) => void) | null = null;
     private _onStatus: ((status: string) => void) | null = null;
@@ -14,12 +13,14 @@ class P2PService {
         if (saved) this._user = JSON.parse(saved);
     }
 
-    get user() { return this._user; }
+    get user() {
+        return this._user;
+    }
 
     async register(username: string): Promise<User> {
         const cleanName = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanName.length < 2) throw new Error("Name too short");
-        
+        if (cleanName.length < 2) throw new Error('Name too short');
+
         const user: User = {
             id: cleanName,
             username: username.trim(),
@@ -32,25 +33,29 @@ class P2PService {
         return user;
     }
 
-    init(callbacks: { 
-        onMessage: (d: any) => void, 
-        onStatus: (s: string) => void,
-        onInbox?: (req: any) => void 
+    async init(callbacks: {
+        onMessage: (d: any) => void;
+        onStatus: (s: string) => void;
+        onInbox?: (req: any) => void;
     }) {
         if (!this._user) return;
+        if (typeof window === 'undefined') return;
+
         this._onMessage = callbacks.onMessage;
         this._onStatus = callbacks.onStatus;
         this._onInbox = callbacks.onInbox || null;
 
+        const { default: Peer } = await import('peerjs');
+
         if (this.peer) this.peer.destroy();
         this.peer = new Peer(this._user.id);
 
-        this.peer.on('open', (id) => {
-            console.log("P2P Online:", id);
+        this.peer.on('open', (id: string) => {
+            console.log('P2P Online:', id);
             this._onStatus?.('ready');
         });
 
-        this.peer.on('connection', (conn) => {
+        this.peer.on('connection', (conn: any) => {
             conn.on('data', (data: any) => {
                 if (data.type === 'HANDSHAKE_REQ') {
                     this._onInbox?.({ conn, user: data.user });
@@ -58,7 +63,7 @@ class P2PService {
             });
         });
 
-        this.peer.on('error', (err) => {
+        this.peer.on('error', (err: any) => {
             if (err.type === 'unavailable-id') this._onStatus?.('name_taken');
             else this._onStatus?.('error');
         });
@@ -66,13 +71,15 @@ class P2PService {
 
     async sendRequest(targetName: string) {
         if (!this.peer) return;
+
         const cleanTarget = targetName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
         const conn = this.peer.connect(cleanTarget);
+
         conn.on('open', () => {
             conn.send({ type: 'HANDSHAKE_REQ', user: this._user });
             this._onStatus?.('request_sent');
         });
-        
+
         conn.on('data', (data: any) => {
             if (data.type === 'HANDSHAKE_ACCEPT') {
                 this.setupConnection(conn);
@@ -80,12 +87,12 @@ class P2PService {
         });
     }
 
-    acceptRequest(conn: DataConnection) {
+    acceptRequest(conn: any) {
         conn.send({ type: 'HANDSHAKE_ACCEPT', user: this._user });
         this.setupConnection(conn);
     }
 
-    private setupConnection(conn: DataConnection) {
+    private setupConnection(conn: any) {
         this.connection = conn;
         this._onStatus?.('connected');
 
@@ -100,13 +107,14 @@ class P2PService {
     }
 
     send(data: any) {
-        if (this.connection && this.connection.open) {
+        if (this.connection?.open) {
             this.connection.send(data);
         }
     }
 
     disconnect() {
         this.connection?.close();
+        this.connection = null;
     }
 }
 
