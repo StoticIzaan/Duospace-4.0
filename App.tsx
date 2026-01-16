@@ -280,11 +280,15 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const [aiLoading, setAiLoading] = useState(false);
   const [showSketchpad, setShowSketchpad] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceDraft, setVoiceDraft] = useState<{ blob: Blob, url: string } | null>(null);
+  const [isPlayingDraft, setIsPlayingDraft] = useState(false);
   const [lastSeen, setLastSeen] = useState<number>(Date.now());
   const [now, setNow] = useState(Date.now());
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftAudioRef = useRef<HTMLAudioElement | null>(null);
   const navigate = useNavigate();
   // Ref to access current user settings inside closures if needed, though we use state here
   const userSettingsRef = useRef(currentUser.settings);
@@ -436,10 +440,10 @@ const Space = ({ user: currentUser }: { user: User }) => {
       recorder.ondataavailable = e => chunks.push(e.data);
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.onloadend = () => sendMessage('voice', reader.result as string);
-        reader.readAsDataURL(blob);
+        const url = URL.createObjectURL(blob);
+        setVoiceDraft({ blob, url });
         stream.getTracks().forEach(t => t.stop());
+        setIsRecording(false);
       };
       recorder.start();
       mediaRecorderRef.current = recorder;
@@ -447,7 +451,38 @@ const Space = ({ user: currentUser }: { user: User }) => {
     } catch (e) { alert("Mic required for voice notes."); }
   };
 
-  const stopVoice = () => { mediaRecorderRef.current?.stop(); setIsRecording(false); };
+  const stopVoice = () => { 
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop(); 
+      }
+      setIsRecording(false); 
+  };
+
+  const discardDraft = () => {
+      setVoiceDraft(null);
+      setIsPlayingDraft(false);
+  };
+
+  const sendDraft = () => {
+      if (!voiceDraft) return;
+      const reader = new FileReader();
+      reader.onloadend = () => {
+          sendMessage('voice', reader.result as string);
+          setVoiceDraft(null);
+          setIsPlayingDraft(false);
+      };
+      reader.readAsDataURL(voiceDraft.blob);
+  };
+  
+  const toggleDraftPlay = () => {
+      if (!draftAudioRef.current) return;
+      if (isPlayingDraft) {
+          draftAudioRef.current.pause();
+      } else {
+          draftAudioRef.current.play();
+      }
+      setIsPlayingDraft(!isPlayingDraft);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -611,19 +646,46 @@ const Space = ({ user: currentUser }: { user: User }) => {
 
       {activeTab === 'chat' && (
         <div className="fixed bottom-36 left-0 right-0 px-8 z-50">
-          <div className="max-w-5xl mx-auto glass p-4 rounded-[3.5rem] shadow-5xl border border-white/20 flex items-center gap-4">
-             <div className="flex gap-2">
-                <button onClick={() => fileInputRef.current?.click()} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Paperclip size={28}/></button>
-                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*, .pdf, .doc, .docx" />
-                <button onClick={() => setShowSketchpad(true)} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Pencil size={28}/></button>
-             </div>
-             <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." onKeyDown={(e) => { 
-                if(e.key === 'Enter' && chatInput.trim()) { sendMessage('text', chatInput); setChatInput(''); }
-             }} className="flex-1 bg-transparent px-4 py-5 outline-none font-bold dark:text-white placeholder:text-slate-300 text-lg" />
-             {chatInput.trim() ? (
-                <button onClick={() => { sendMessage('text', chatInput); setChatInput(''); }} className="w-16 h-16 bg-vibe text-white rounded-[2rem] flex items-center justify-center shadow-2xl active:scale-90 transition-all"><Send size={28}/></button>
+          <div className="max-w-5xl mx-auto glass p-4 rounded-[3.5rem] shadow-5xl border border-white/20 flex items-center gap-4 h-[5.5rem]">
+             {voiceDraft ? (
+                <div className="w-full flex items-center justify-between px-2 animate-in fade-in slide-in-from-bottom-2">
+                    <audio ref={draftAudioRef} src={voiceDraft.url} onEnded={() => setIsPlayingDraft(false)} className="hidden" />
+                    <button onClick={discardDraft} className="w-12 h-12 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center hover:bg-rose-200 transition-colors">
+                        <Trash2 size={24} />
+                    </button>
+                    
+                    <div className="flex-1 mx-4 flex items-center gap-3 bg-slate-100 dark:bg-slate-800 rounded-full px-4 py-3">
+                        <button onClick={toggleDraftPlay} className="text-slate-600 dark:text-slate-300">
+                            {isPlayingDraft ? <Pause size={24} fill="currentColor"/> : <Play size={24} fill="currentColor"/>}
+                        </button>
+                        <div className="h-1 flex-1 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
+                             <div className={`h-full bg-vibe transition-all duration-300 ${isPlayingDraft ? 'w-full animate-[width_10s_linear]' : 'w-0'}`}></div> 
+                        </div>
+                        <span className="text-xs font-bold text-slate-400">Preview</span>
+                    </div>
+
+                    <button onClick={sendDraft} className="w-14 h-14 bg-vibe text-white rounded-[2rem] flex items-center justify-center shadow-xl active:scale-95 transition-all">
+                        <Send size={28} />
+                    </button>
+                </div>
              ) : (
-                <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} className={`w-16 h-16 rounded-[2rem] flex items-center justify-center transition-all shadow-xl ${isRecording ? 'bg-rose-500 scale-150 animate-pulse text-white' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'}`}><Mic size={28}/></button>
+                <>
+                    <div className="flex gap-2">
+                        <button onClick={() => fileInputRef.current?.click()} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Paperclip size={28}/></button>
+                        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*, .pdf, .doc, .docx" />
+                        <button onClick={() => setShowSketchpad(true)} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Pencil size={28}/></button>
+                    </div>
+                    <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder={isRecording ? "Recording audio..." : "Type a message..."} disabled={isRecording} onKeyDown={(e) => { 
+                        if(e.key === 'Enter' && chatInput.trim()) { sendMessage('text', chatInput); setChatInput(''); }
+                    }} className="flex-1 bg-transparent px-4 py-5 outline-none font-bold dark:text-white placeholder:text-slate-300 text-lg" />
+                    {chatInput.trim() ? (
+                        <button onClick={() => { sendMessage('text', chatInput); setChatInput(''); }} className="w-16 h-16 bg-vibe text-white rounded-[2rem] flex items-center justify-center shadow-2xl active:scale-90 transition-all"><Send size={28}/></button>
+                    ) : (
+                        <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} onMouseLeave={(e) => { if(isRecording) stopVoice(); }} className={`w-16 h-16 rounded-[2rem] flex items-center justify-center transition-all shadow-xl ${isRecording ? 'bg-rose-500 scale-110 animate-pulse text-white ring-4 ring-rose-200' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                           {isRecording ? <div className="w-6 h-6 bg-white rounded-md animate-spin-slow" /> : <Mic size={28}/>}
+                        </button>
+                    )}
+                </>
              )}
           </div>
         </div>
