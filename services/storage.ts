@@ -1,4 +1,2 @@
-
-// This file has been deprecated in favor of services/peerService.ts (CloudService)
-// all data is now managed via Firebase to ensure cross-device consistency.
+// This file is purged. All persistent state is managed via LocalStorage.
 export {};

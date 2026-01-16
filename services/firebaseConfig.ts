@@ -1,3 +1,2 @@
-
-// This file is purged. Using Supabase exclusively.
+// This file is purged. P2P architecture only.
 export {};

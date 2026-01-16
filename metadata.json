@@ -1,6 +1,6 @@
 {
-  "name": "DuoSpace Premium",
-  "description": "A luxury private world for you and your best friend.",
+  "name": "DuoSpace P2P",
+  "description": "A pure P2P private world for you and your best friend.",
   "requestFramePermissions": [
     "microphone",
     "camera",
