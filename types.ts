@@ -1,4 +1,3 @@
-
 export type ThemeColor = 'violet' | 'rose' | 'red' | 'sky' | 'emerald' | 'gold';
 
 export interface User {
@@ -6,68 +5,37 @@ export interface User {
   username: string;
   avatarColor: string;
   settings: {
-    darkMode: boolean;
-    showLastSeen: boolean;
-    readReceipts: boolean;
-    theme: ThemeColor;
-    aiInChat: boolean;
-    aiTone: 'playful' | 'serious'; // New setting
+    darkMode?: boolean;
+    showLastSeen?: boolean;
+    readReceipts?: boolean;
+    theme?: ThemeColor;
+    aiInChat?: boolean;
+    aiTone?: 'playful' | 'serious';
   };
-}
-
-export interface JoinRequest {
-  id: string;
-  fromUser: User;
-  spaceId: string;
-  spaceName: string;
-  timestamp: number;
 }
 
 export interface Message {
-  id: string;
-  senderId: string;
-  senderName: string;
+  id?: string;
+  sender_id: string;
+  sender_name: string;
   content: string;
   timestamp: number;
   type: 'text' | 'ai' | 'image' | 'voice' | 'file';
-  mediaUrl?: string; 
-  fileName?: string;
-  read?: boolean;
-  replyTo?: {
-    id: string;
-    senderName: string;
-    content: string;
-  };
-  reactions?: Record<string, string>; // userId -> emoji
+  media_url?: string; 
 }
 
 export interface GameState {
   board: (string | null)[];
   status: 'waiting' | 'active' | 'won' | 'draw';
-  resetRequestedBy?: string;
+  turn?: string; 
 }
 
 export interface DuoSpace {
   id: string;
-  ownerId: string;
+  owner_id: string;
   name: string;
   code: string;
   theme: ThemeColor;
   members: User[];
-  requests: JoinRequest[];
-  activeGame: GameState;
-  messages: Message[];
-}
-
-export interface AuthSession {
-  user: User;
-}
-
-// P2P Types
-export type P2PMessageType = 'JOIN_REQUEST' | 'ACCEPT_JOIN' | 'SYNC_SPACE' | 'NEW_MESSAGE' | 'GAME_MOVE' | 'PING' | 'READ_RECEIPT';
-
-export interface P2PPayload {
-  type: P2PMessageType;
-  data: any;
-  fromUsername: string;
+  active_game: GameState;
 }
