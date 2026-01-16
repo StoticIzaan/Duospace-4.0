@@ -1,10 +1,24 @@
+import { initializeApp } from "firebase/app";
+import { getDatabase } from "firebase/database";
+import { getAuth } from "firebase/auth";
+import { getStorage } from "firebase/storage";
+
+// Filled with your specific duospace-bd78b project details
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyB72sOWStq7rCXRXn_hYZzcQMkNncIzNsc",
+  authDomain: "duospace-bd78b.firebaseapp.com",
+  databaseURL: "https://duospace-bd78b-default-rtdb.firebaseio.com",
+  projectId: "duospace-bd78b",
+  storageBucket: "duospace-bd78b.firebasestorage.app",
+  messagingSenderId: "173422542800",
+  appId: "1:173422542800:web:2279c7a7576030921203d5"
 };
+
+const app = initializeApp(firebaseConfig);
+
+// EXACT EXPORTS - This fixes the build error in peerService.ts
+export const db = getDatabase(app);
+export const auth = getAuth(app);
+export const storage = getStorage(app);
+
+export default app;
