@@ -4,10 +4,10 @@ import {
   Search, User as UserIcon, Zap, MessageCircle, Bell, UserPlus, 
   CheckCircle2, Rocket, Waves
 } from 'lucide-react';
-import { p2p } from './services/peerService'; 
+import { p2p } from './peerService'; 
 import { User, Message, GameState } from './types';
 import { Button, Input, Card, Badge } from './components/Common';
-import * as AI from './services/geminiService';
+import * as AI from './geminiService';
 
 const TypingIndicator = () => (
   <div className="flex gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 rounded-xl rounded-tl-none w-fit animate-message-pop shadow-sm border border-slate-100 dark:border-slate-700/50">
@@ -104,8 +104,9 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: 'dashboard' | '
   }, []);
 
   const handleSendRequest = () => {
-    if (!targetName.trim()) return;
-    p2p.sendRequest(targetName);
+    const trimmed = targetName.trim();
+    if (!trimmed) return;
+    p2p.sendRequest(trimmed);
   };
 
   const handleAccept = (req: any) => {
@@ -120,7 +121,7 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: 'dashboard' | '
             <h2 className="text-xl font-black dark:text-white tracking-tighter">Dimension</h2>
             <div className="flex items-center gap-1.5">
                 <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse-emerald"></div>
-                <span className="text-[7px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-[0.15em]">{status} • {user.id}</span>
+                <span className="text-[7px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-[0.15em]">{String(status)} • {String(user.id)}</span>
             </div>
         </div>
         <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-2 bg-white dark:bg-slate-900 text-slate-400 rounded-lg shadow-sm hover:text-rose-500 transition-all active:scale-90 border border-slate-100 dark:border-slate-800">
@@ -153,7 +154,7 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: 'dashboard' | '
                 </div>
                 <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-dashed border-slate-200 dark:border-slate-700">
                     <p className="text-[7px] font-black uppercase text-slate-400 mb-0.5 tracking-wider">Your P2P Name</p>
-                    <div className="text-lg font-black text-vibe-primary tracking-tighter select-all">{user.username}</div>
+                    <div className="text-lg font-black text-vibe-primary tracking-tighter select-all">{String(user.username)}</div>
                 </div>
             </Card>
         )}
@@ -188,7 +189,7 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: 'dashboard' | '
                                     <UserIcon size={18}/>
                                 </div>
                                 <div>
-                                    <h4 className="text-sm font-black dark:text-white">{req.user?.username || "Peer"}</h4>
+                                    <h4 className="text-sm font-black dark:text-white">{String(req.user?.username || "Peer")}</h4>
                                     <p className="text-[7px] font-black text-vibe-primary uppercase tracking-wider">Connect Request</p>
                                 </div>
                             </div>
@@ -214,8 +215,8 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
   useEffect(() => {
     p2p.init({
         onMessage: (data) => {
-            if (data.type === 'CHAT') setMessages(prev => [...prev, data.msg]);
-            if (data.type === 'GAME') setGame(data.game);
+            if (data && data.type === 'CHAT') setMessages(prev => [...prev, data.msg]);
+            if (data && data.type === 'GAME') setGame(data.game);
         },
         onStatus: () => {}
     });
@@ -224,16 +225,17 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, aiLoading]);
 
   const sendMessage = async () => {
-    if (!chatInput.trim()) return;
-    const msg: Message = { sender_id: user.id, sender_name: user.username, content: chatInput, timestamp: Date.now(), type: 'text' };
+    const trimmed = chatInput.trim();
+    if (!trimmed) return;
+    const msg: Message = { sender_id: user.id, sender_name: user.username, content: trimmed, timestamp: Date.now(), type: 'text' };
     setMessages(prev => [...prev, msg]);
     p2p.send({ type: 'CHAT', msg });
     setChatInput('');
 
-    if (chatInput.toLowerCase().includes('@ai')) {
+    if (trimmed.toLowerCase().includes('@ai')) {
         setAiLoading(true);
-        const reply = await AI.getAiResponse(chatInput, messages, user.settings.aiTone);
-        const aiMsg: Message = { sender_id: 'ai', sender_name: 'Duo AI', content: reply, timestamp: Date.now(), type: 'ai' };
+        const reply = await AI.getAiResponse(trimmed, messages, user.settings.aiTone);
+        const aiMsg: Message = { sender_id: 'ai', sender_name: 'Duo AI', content: String(reply), timestamp: Date.now(), type: 'ai' };
         setMessages(prev => [...prev, aiMsg]);
         p2p.send({ type: 'CHAT', msg: aiMsg });
         setAiLoading(false);
@@ -291,11 +293,11 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
                                 ${isGroupedBottom ? (isMine ? 'rounded-br-sm' : 'rounded-bl-sm') : 'rounded-xl'}
                                 ${!isGroupedTop && !isGroupedBottom ? 'rounded-xl' : ''}
                             `}>
-                                <p className="leading-tight whitespace-pre-wrap text-[11px] md:text-[12px]">{m.content}</p>
+                                <p className="leading-tight whitespace-pre-wrap text-[11px] md:text-[12px]">{String(m.content)}</p>
                             </div>
                             {!isGroupedBottom && (
                                 <span className="text-[6px] font-black uppercase text-slate-400 mt-0.5 px-2 tracking-[0.05em]">
-                                    {isAi ? '✨ Duo AI' : m.sender_name}
+                                    {isAi ? '✨ Duo AI' : String(m.sender_name)}
                                 </span>
                             )}
                         </div>

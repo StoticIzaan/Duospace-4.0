@@ -5,17 +5,5 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-  },
-  build: {
-    rollupOptions: {
-      external: [
-        'react',
-        'react-dom',
-        'react-dom/client',
-        'peerjs',
-        'lucide-react',
-        '@google/genai'
-      ]
-    }
   }
 });
