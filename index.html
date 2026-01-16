@@ -1,0 +1,135 @@
+
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>DuoSpace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+      
+      :root {
+        --theme-primary: #7c3aed;
+        --theme-primary-soft: #f5f3ff;
+        --theme-gradient: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+        --theme-shadow: rgba(124, 58, 237, 0.15);
+      }
+
+      [data-theme='rose'] {
+        --theme-primary: #f43f5e;
+        --theme-primary-soft: #fff1f2;
+        --theme-gradient: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+        --theme-shadow: rgba(244, 63, 94, 0.15);
+      }
+      [data-theme='red'] {
+        --theme-primary: #ef4444;
+        --theme-primary-soft: #fef2f2;
+        --theme-gradient: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        --theme-shadow: rgba(239, 68, 68, 0.15);
+      }
+      [data-theme='sky'] {
+        --theme-primary: #0ea5e9;
+        --theme-primary-soft: #f0f9ff;
+        --theme-gradient: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+        --theme-shadow: rgba(14, 165, 233, 0.15);
+      }
+      [data-theme='emerald'] {
+        --theme-primary: #10b981;
+        --theme-primary-soft: #ecfdf5;
+        --theme-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        --theme-shadow: rgba(16, 185, 129, 0.15);
+      }
+      [data-theme='gold'] {
+        --theme-primary: #f59e0b;
+        --theme-primary-soft: #fffbeb;
+        --theme-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        --theme-shadow: rgba(245, 158, 11, 0.15);
+      }
+
+      body {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        height: 100%;
+        overscroll-behavior-y: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .bg-vibe { background: var(--theme-gradient); }
+      .text-vibe-primary { color: var(--theme-primary); }
+      .bg-vibe-soft { background-color: var(--theme-primary-soft); }
+      .shadow-vibe { box-shadow: 0 10px 30px -5px var(--theme-shadow); }
+
+      .glass {
+        background: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+      }
+      .dark .glass {
+        background: rgba(15, 23, 42, 0.85);
+      }
+      
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+      @keyframes slideUp {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .animate-slide-up { animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+      
+      .mesh-gradient {
+        background: fixed;
+        background-color: #ffffff;
+        background-image: 
+          radial-gradient(at 100% 0%, hsla(253,100%,90%,1) 0px, transparent 50%),
+          radial-gradient(at 0% 100%, hsla(225,100%,95%,1) 0px, transparent 50%);
+      }
+      .dark .mesh-gradient {
+        background-color: #020617;
+        background-image: 
+          radial-gradient(at 100% 0%, hsla(253,100%,10%,1) 0px, transparent 50%),
+          radial-gradient(at 0% 100%, hsla(225,100%,10%,1) 0px, transparent 50%);
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              vibe: {
+                primary: 'var(--theme-primary)',
+                soft: 'var(--theme-primary-soft)',
+              }
+            },
+            borderRadius: {
+              '4xl': '2rem',
+              '5xl': '3.5rem',
+            }
+          }
+        }
+      }
+    </script>
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.12.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+  }
+}
+</script>
+  </head>
+  <body class="mesh-gradient transition-colors duration-500 h-full overflow-hidden">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
