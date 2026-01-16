@@ -29,13 +29,3 @@ export interface GameState {
   status: 'waiting' | 'active' | 'won' | 'draw';
   turn?: string; 
 }
-
-export interface DuoSpace {
-  id: string;
-  owner_id: string;
-  name: string;
-  code: string;
-  theme: ThemeColor;
-  members: User[];
-  active_game: GameState;
-}

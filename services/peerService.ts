@@ -1,7 +1,7 @@
 import { Peer, DataConnection } from 'peerjs';
 import { User, Message } from '../types';
 
-class P2PCloudService {
+class P2PService {
     private peer: Peer | null = null;
     private connection: DataConnection | null = null;
     private _user: User | null = null;
@@ -51,7 +51,6 @@ class P2PCloudService {
         });
 
         this.peer.on('connection', (conn) => {
-            // Incoming connection = Handshake request
             conn.on('data', (data: any) => {
                 if (data.type === 'HANDSHAKE_REQ') {
                     this._onInbox?.({ conn, user: data.user });
@@ -111,4 +110,4 @@ class P2PCloudService {
     }
 }
 
-export const cloud = new P2PCloudService();
+export const p2p = new P2PService();

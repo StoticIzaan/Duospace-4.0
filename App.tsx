@@ -5,7 +5,7 @@ import {
   X, Sparkles, Trophy, Share2, Search, User as UserIcon,
   Zap, MessageCircle, Bell, UserPlus, CheckCircle2, Rocket, Waves
 } from 'lucide-react';
-import { cloud } from './services/peerService'; 
+import { p2p } from './services/peerService'; 
 import { User, Message, GameState } from './types';
 import { Button, Input, Card, Badge } from './components/Common';
 import * as AI from './services/geminiService';
@@ -59,7 +59,7 @@ const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
 
   const handleRegister = async () => {
     try {
-        const user = await cloud.register(username);
+        const user = await p2p.register(username);
         onLogin(user);
     } catch (err: any) { setError(err.message); }
   };
@@ -95,23 +95,22 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: string) => void
   const [status, setStatus] = useState('ready');
 
   useEffect(() => {
-    cloud.init({
+    p2p.init({
         onMessage: () => {},
         onStatus: setStatus,
         onInbox: (req) => {
             setInbox(prev => [...prev, req]);
-            // Play notification sound here if desired
         }
     });
   }, []);
 
   const handleSendRequest = () => {
     if (!targetName.trim()) return;
-    cloud.sendRequest(targetName);
+    p2p.sendRequest(targetName);
   };
 
   const handleAccept = (req: any) => {
-    cloud.acceptRequest(req.conn);
+    p2p.acceptRequest(req.conn);
     setView('space');
   };
 
@@ -122,7 +121,7 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: string) => void
             <h2 className="text-5xl font-black dark:text-white tracking-tighter">Dimension</h2>
             <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse-emerald"></div>
-                <span className="text-[11px] font-black uppercase text-slate-600 dark:text-slate-300 tracking-[0.3em]">{status} • {user.id}</span>
+                <span className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-[0.3em]">{status} • {user.id}</span>
             </div>
         </div>
         <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-5 bg-white dark:bg-slate-900 text-slate-500 rounded-[1.5rem] shadow-sm hover:text-rose-500 transition-all active:scale-90 border border-slate-100 dark:border-slate-800">
@@ -130,13 +129,12 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: string) => void
         </button>
       </header>
 
-      {/* 3 Main Options Navigation */}
       <nav className="flex gap-3 p-2 bg-slate-200/40 dark:bg-slate-900/50 rounded-[2rem] mb-10 shrink-0 border border-slate-100 dark:border-white/5 animate-slide-up" style={{ animationDelay: '0.1s' }}>
         <button onClick={() => setActiveTab('make')} className={`flex-1 flex flex-col items-center gap-1 py-4 rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all duration-300 ${activeTab === 'make' ? 'bg-white dark:bg-slate-800 text-vibe-primary shadow-xl scale-105' : 'text-slate-500'}`}>
-            <Plus size={20} className="mb-1"/> Make
+            <Plus size={20} className="mb-1"/> Make DuoSpace
         </button>
         <button onClick={() => setActiveTab('join')} className={`flex-1 flex flex-col items-center gap-1 py-4 rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all duration-300 ${activeTab === 'join' ? 'bg-white dark:bg-slate-800 text-vibe-primary shadow-xl scale-105' : 'text-slate-500'}`}>
-            <UserPlus size={20} className="mb-1"/> Join
+            <UserPlus size={20} className="mb-1"/> Join Room
         </button>
         <button onClick={() => setActiveTab('inbox')} className={`flex-1 flex flex-col items-center gap-1 py-4 rounded-[1.5rem] font-black text-[10px] uppercase tracking-[0.2em] transition-all duration-300 relative ${activeTab === 'inbox' ? 'bg-white dark:bg-slate-800 text-vibe-primary shadow-xl scale-105' : 'text-slate-500'}`}>
             <Bell size={20} className="mb-1"/> Inbox
@@ -151,11 +149,11 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: string) => void
                     <Rocket size={56} className="animate-pulse" />
                 </div>
                 <div className="space-y-3">
-                    <h3 className="text-3xl font-black dark:text-white">Your P2P Space</h3>
-                    <p className="text-base text-slate-600 dark:text-slate-400 font-medium">Your identity is active and listening for connections.</p>
+                    <h3 className="text-3xl font-black dark:text-white">Hosting Space</h3>
+                    <p className="text-base text-slate-700 dark:text-slate-400 font-medium">Your identity is active and waiting for a friend's handshake.</p>
                 </div>
-                <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-700">
-                    <p className="text-[11px] font-black uppercase text-slate-500 mb-2">Share this name with your friend</p>
+                <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border-2 border-dashed border-slate-300 dark:border-slate-700">
+                    <p className="text-[11px] font-black uppercase text-slate-600 mb-2">Share this name with your friend</p>
                     <div className="text-3xl font-black text-vibe-primary tracking-tighter select-all">{user.username}</div>
                 </div>
             </Card>
@@ -167,8 +165,8 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: string) => void
                     <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 text-blue-600 mx-auto rounded-2xl flex items-center justify-center mb-4">
                         <Waves size={32} />
                     </div>
-                    <h3 className="text-3xl font-black dark:text-white">Join Dimension</h3>
-                    <p className="text-base text-slate-600 dark:text-slate-400 font-medium leading-relaxed">Enter your friend's name to send a handshake request.</p>
+                    <h3 className="text-3xl font-black dark:text-white">Join by Name</h3>
+                    <p className="text-base text-slate-700 dark:text-slate-400 font-medium leading-relaxed">Enter your friend's name to send a handshake request.</p>
                 </div>
                 <Input value={targetName} onChange={e => setTargetName(e.target.value)} placeholder="Friend's P2P Name..." icon={<Search size={24}/>} onIconClick={handleSendRequest} onKeyDown={e => e.key === 'Enter' && handleSendRequest()} />
                 <Button onClick={handleSendRequest} className="w-full py-5">Initiate Handshake</Button>
@@ -179,9 +177,9 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: string) => void
         {activeTab === 'inbox' && (
             <div className="space-y-5">
                 {inbox.length === 0 ? (
-                    <div className="text-center py-32 bg-white/40 dark:bg-slate-900/40 rounded-[3rem] border-2 border-dashed border-slate-200 dark:border-slate-800">
+                    <div className="text-center py-32 bg-white/40 dark:bg-slate-900/40 rounded-[3rem] border-2 border-dashed border-slate-300 dark:border-slate-800">
                         <MessageCircle size={48} className="mx-auto text-slate-300 mb-4" />
-                        <p className="text-lg text-slate-400 font-bold tracking-tight">Your inbox is waiting for pulses...</p>
+                        <p className="text-lg text-slate-500 dark:text-slate-400 font-bold tracking-tight">Your inbox is waiting for pulses...</p>
                     </div>
                 ) : (
                     inbox.map((req, i) => (
@@ -216,7 +214,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    cloud.init({
+    p2p.init({
         onMessage: (data) => {
             if (data.type === 'CHAT') setMessages(prev => [...prev, data.msg]);
             if (data.type === 'GAME') setGame(data.game);
@@ -231,7 +229,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
     if (!chatInput.trim()) return;
     const msg: Message = { sender_id: user.id, sender_name: user.username, content: chatInput, timestamp: Date.now(), type: 'text' };
     setMessages(prev => [...prev, msg]);
-    cloud.send({ type: 'CHAT', msg });
+    p2p.send({ type: 'CHAT', msg });
     setChatInput('');
 
     if (chatInput.toLowerCase().includes('@ai')) {
@@ -239,7 +237,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
         const reply = await AI.getAiResponse(chatInput, messages, user.settings.aiTone);
         const aiMsg: Message = { sender_id: 'ai', sender_name: 'Duo AI', content: reply, timestamp: Date.now(), type: 'ai' };
         setMessages(prev => [...prev, aiMsg]);
-        cloud.send({ type: 'CHAT', msg: aiMsg });
+        p2p.send({ type: 'CHAT', msg: aiMsg });
         setAiLoading(false);
     }
   };
@@ -251,7 +249,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
               board[r * 7 + col] = user.id;
               const newGame = { ...game, board, status: 'active' as const };
               setGame(newGame);
-              cloud.send({ type: 'GAME', game: newGame });
+              p2p.send({ type: 'GAME', game: newGame });
               return;
           }
       }
@@ -260,12 +258,12 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
   return (
     <div className="h-full flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
         <header className="p-8 flex items-center justify-between border-b dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl shrink-0 z-20">
-            <button onClick={onBack} className="p-4 text-slate-500 hover:text-vibe-primary transition-all active:scale-90"><ArrowLeft size={32}/></button>
+            <button onClick={onBack} className="p-4 text-slate-600 hover:text-vibe-primary transition-all active:scale-90"><ArrowLeft size={32}/></button>
             <div className="flex flex-col items-center">
               <h2 className="text-2xl font-black dark:text-white tracking-tight">Linked Space</h2>
               <div className="flex items-center gap-2 mt-1">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse-emerald"></span>
-                <span className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-[0.2em]">P2P Active</span>
+                <span className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-400 tracking-[0.2em]">P2P Active</span>
               </div>
             </div>
             <button onClick={() => setShowGame(!showGame)} className={`p-4 rounded-2xl transition-all duration-500 ${showGame ? 'bg-vibe text-white shadow-vibe rotate-12' : 'text-slate-500 bg-slate-100 dark:bg-slate-800'}`}>
@@ -273,7 +271,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
             </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-4 pb-48 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-8 space-y-4 pb-48 no-scrollbar text-slate-900 dark:text-slate-100">
             {showGame && <Connect4 game={game} onMove={handleMove} isMyTurn={true} myId={user.id} />}
             
             <div className="flex flex-col gap-2">
@@ -298,7 +296,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
                                 <p className="leading-relaxed whitespace-pre-wrap text-sm md:text-base">{m.content}</p>
                             </div>
                             {!isGroupedBottom && (
-                                <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-500 mt-2.5 px-4 tracking-[0.15em]">
+                                <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-500 mt-2.5 px-4 tracking-[0.15em]">
                                     {isAi ? '✨ Duo AI' : m.sender_name}
                                 </span>
                             )}
@@ -312,7 +310,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
 
         <div className="absolute bottom-10 left-0 right-0 px-8 z-30">
             <Card className="flex items-center gap-4 !p-4 shadow-5xl border-white dark:border-white/5 group focus-within:ring-8 focus-within:ring-vibe/10 transition-all duration-500">
-                <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()} className="flex-1 bg-transparent outline-none font-bold dark:text-white px-5 placeholder:text-slate-400 dark:placeholder:text-slate-600" placeholder="Type a message or whisper to @ai..." />
+                <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()} className="flex-1 bg-transparent outline-none font-bold text-slate-900 dark:text-white px-5 placeholder:text-slate-400 dark:placeholder:text-slate-600" placeholder="Type a message or whisper to @ai..." />
                 <button onClick={sendMessage} disabled={!chatInput.trim()} className="w-16 h-16 bg-vibe text-white rounded-[1.75rem] flex items-center justify-center shadow-xl active:scale-90 disabled:opacity-20 transition-all group-focus-within:scale-110"><Send size={28}/></button>
             </Card>
         </div>
@@ -321,7 +319,7 @@ const Space = ({ user, onBack }: { user: User, onBack: () => void }) => {
 };
 
 const App = () => {
-  const [user, setUser] = useState<User | null>(cloud.user);
+  const [user, setUser] = useState<User | null>(p2p.user);
   const [view, setView] = useState<'dashboard' | 'space'>('dashboard');
 
   if (!user) return <Auth onLogin={setUser} />;
