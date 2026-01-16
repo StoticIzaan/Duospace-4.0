@@ -1,5 +1,5 @@
 
-import Peer, { DataConnection } from 'peerjs';
+import { Peer, DataConnection } from 'peerjs';
 import { P2PPayload } from '../types';
 
 type Listener = (payload: P2PPayload) => void;
@@ -23,6 +23,7 @@ class P2PService {
     console.log("Initializing HoloNet Node:", this.peerId);
 
     try {
+        // PeerJS class is a named export in newer versions
         this.peer = new Peer(this.peerId, {
             debug: 1
         });
@@ -38,7 +39,7 @@ class P2PService {
           this.setupConnection(conn);
         });
 
-        this.peer.on('error', (err) => {
+        this.peer.on('error', (err: any) => {
             console.error('HoloNet Error:', err);
             // Handle ID taken (user already online elsewhere)
             if (err.type === 'unavailable-id') {
