@@ -7,11 +7,12 @@ import {
   Trash2, X, Mic, Image as ImageIcon, CheckCheck, 
   Palette, StopCircle, Volume2, Camera, FileUp, 
   Pause, Check, Reply, Settings, Pencil, Eraser,
-  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2
+  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal
 } from 'lucide-react';
 import * as API from './services/storage';
 import * as AI from './services/geminiService';
-import { User, DuoSpace, Message, ThemeColor, JoinRequest } from './types';
+import { p2p } from './services/peerService';
+import { User, DuoSpace, Message, ThemeColor, JoinRequest, P2PPayload } from './types';
 import { Button, Input, Card, Badge } from './components/Common';
 
 // --- Sub-component: Sketchpad ---
@@ -75,6 +76,7 @@ const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const handleAuth = () => {
     if (!name.trim()) return;
     setLoading(true);
+    // Slight delay for effect
     setTimeout(() => {
       const user: User = {
         id: Math.random().toString(36).substring(2, 11),
@@ -96,12 +98,12 @@ const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
         </div>
         <div>
           <h1 className="text-6xl font-black dark:text-white tracking-tight mb-2">DuoSpace</h1>
-          <p className="text-xs font-black uppercase text-vibe-primary tracking-[0.4em] opacity-80">Premium Private Worlds</p>
+          <p className="text-xs font-black uppercase text-vibe-primary tracking-[0.4em] opacity-80">HoloNet Online</p>
         </div>
       </div>
       <Card className="w-full max-w-sm !p-10 space-y-8 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[3.5rem]">
         <Input label="Your Identity" value={name} onChange={e => setName(e.target.value)} placeholder="Type your username..." onKeyDown={e => e.key === 'Enter' && handleAuth()} />
-        <Button onClick={handleAuth} isLoading={loading} className="w-full py-5 rounded-3xl">Enter Dimension</Button>
+        <Button onClick={handleAuth} isLoading={loading} className="w-full py-5 rounded-3xl">Initialize Uplink</Button>
       </Card>
     </div>
   );
@@ -111,74 +113,79 @@ const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
 const Dashboard = ({ user }: { user: User }) => {
   const [spaces, setSpaces] = useState<DuoSpace[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'searching' | 'found' | 'offline'>('idle');
   const [newSpaceName, setNewSpaceName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
   const [view, setView] = useState<'mine' | 'discover'>('mine');
-  const [searching, setSearching] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
 
+  // --- Core P2P Initialization ---
   useEffect(() => {
-    const params = new URLSearchParams(location.hash.split('?')[1]);
-    const portal = params.get('portal');
-    if (portal) {
-      setTimeout(() => {
-        try {
-          const space = API.importSpace(portal, user);
-          navigate(`/space/${space.id}`, { replace: true });
-        } catch (e) { console.error(e); }
-      }, 500);
-    }
-  }, [location]);
+    // Start P2P on mount
+    p2p.initialize(user.username, () => {
+        setIsOnline(true);
+    });
 
+    // Listen for P2P events
+    const unsubscribe = p2p.subscribe((payload: P2PPayload) => {
+        if (payload.type === 'JOIN_REQUEST') {
+            // Auto accept for seamless demo feel or show popup?
+            // For now, let's just alert
+            const allow = confirm(`Incoming connection request from "${payload.fromUsername}". Accept?`);
+            if (allow) {
+                // Find a space to add them to, or create one
+                let space = spaces.find(s => s.ownerId === user.id);
+                if (!space) space = API.createSpace(user, `${user.username} & ${payload.fromUsername}`);
+                
+                // Add member via P2P
+                const updatedSpace = { ...space, members: [...space.members, payload.data.user] };
+                API.saveSpace(updatedSpace);
+                
+                // Send back the space data
+                p2p.sendTo(payload.fromUsername, {
+                    type: 'ACCEPT_JOIN',
+                    data: updatedSpace,
+                    fromUsername: user.username
+                });
+                
+                setSpaces(API.getMySpaces(user.id));
+            }
+        }
+        else if (payload.type === 'ACCEPT_JOIN') {
+            // We have been accepted! Save the space
+            API.saveSpace(payload.data);
+            setSpaces(API.getMySpaces(user.id));
+            alert(`Connected to ${payload.fromUsername}!`);
+            setView('mine');
+        }
+    });
+
+    return () => unsubscribe();
+  }, [user.id, spaces]);
+
+  // Polling for local updates
   useEffect(() => {
-    const fetch = () => {
-      const db = JSON.parse(localStorage.getItem('duospace_v10_db') || '{"spaces":[], "publicRegistry":[]}');
-      const mySpaces = db.spaces.filter((s: any) => s.members.some((m: any) => m.id === user.id));
-      setSpaces(mySpaces);
-      
-      const requests = db.spaces
-        .filter((s: any) => s.ownerId === user.id)
-        .flatMap((s: any) => s.requests);
-      setPendingRequests(requests);
-    };
+    const fetch = () => setSpaces(API.getMySpaces(user.id));
     fetch(); const interval = setInterval(fetch, 2000); return () => clearInterval(interval);
   }, [user.id]);
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!searchQuery.trim()) return;
-    setSearching(true);
-    // Simulate network delay
-    setTimeout(() => {
-      setSearchResults(API.searchByUsername(searchQuery));
-      setSearching(false);
-    }, 800);
+    setSearchStatus('searching');
+    
+    // Attempt P2P Connection
+    const success = await p2p.connect(searchQuery);
+    setSearchStatus(success ? 'found' : 'offline');
   };
 
-  const getShareLink = () => {
-    if (spaces.length > 0) {
-      return API.exportSpace(spaces[0].id);
-    }
-    return '';
-  };
-
-  const shareMyProfile = () => {
-    if (spaces.length === 0) {
-       // Create a default space if none
-       API.createSpace(user, `${user.username}'s World`);
-    }
-    // Get the first space and share it
-    const s = spaces.length > 0 ? spaces[0] : API.getSpace(API.createSpace(user, `${user.username}'s World`).id)!;
-    const key = API.exportSpace(s.id);
-    const url = `${window.location.origin}${window.location.pathname}#?portal=${key}`;
-    if (navigator.share) {
-       navigator.share({ title: `Join ${user.username}`, url });
-    } else {
-       navigator.clipboard.writeText(url);
-       alert("Profile Link Copied! Send this to your friend.");
-    }
+  const handleJoinRequest = () => {
+      p2p.sendTo(searchQuery, {
+          type: 'JOIN_REQUEST',
+          data: { user },
+          fromUsername: user.username
+      });
+      alert(`Signal sent to ${searchQuery}. Waiting for them to accept...`);
   };
 
   return (
@@ -186,98 +193,73 @@ const Dashboard = ({ user }: { user: User }) => {
       <header className="flex justify-between items-center py-6">
         <div className="flex flex-col">
           <h2 className="text-4xl font-black dark:text-white tracking-tighter">Worlds</h2>
-          <Badge color="bg-vibe-soft text-vibe-primary w-fit mt-1">Cloud v10.1</Badge>
+          <div className="flex items-center gap-2 mt-1">
+             <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-rose-500'}`}></div>
+             <Badge color="bg-vibe-soft text-vibe-primary">{isOnline ? 'HoloNet Active' : 'Offline'}</Badge>
+          </div>
         </div>
-        <div className="flex gap-2">
-          {pendingRequests.length > 0 && (
-            <div className="relative">
-              <button className="p-3 bg-vibe-soft text-vibe-primary rounded-2xl"><Bell size={24}/></button>
-              <div className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white">{pendingRequests.length}</div>
-            </div>
-          )}
-          <button onClick={() => { API.clearSession(); window.location.reload(); }} className="p-3 bg-white dark:bg-slate-900 rounded-2xl shadow-sm text-slate-400 border border-slate-100 dark:border-slate-800"><LogOut size={24} /></button>
-        </div>
+        <button onClick={() => { API.clearSession(); window.location.reload(); }} className="p-3 bg-white dark:bg-slate-900 rounded-2xl shadow-sm text-slate-400 border border-slate-100 dark:border-slate-800"><LogOut size={24} /></button>
       </header>
 
       <nav className="flex gap-4 mb-8">
         <button onClick={() => setView('mine')} className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${view === 'mine' ? 'bg-vibe text-white shadow-xl shadow-vibe/20' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>My Spaces</button>
-        <button onClick={() => setView('discover')} className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${view === 'discover' ? 'bg-vibe text-white shadow-xl shadow-vibe/20' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>Discover</button>
+        <button onClick={() => setView('discover')} className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${view === 'discover' ? 'bg-vibe text-white shadow-xl shadow-vibe/20' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>HoloNet</button>
       </nav>
 
       <div className="flex-1 flex flex-col space-y-6 overflow-y-auto no-scrollbar pb-10">
         {view === 'mine' ? (
-          <>
-            {pendingRequests.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Join Requests</p>
-                {pendingRequests.map(req => (
-                  <Card key={req.id} className="!p-6 border-l-4 border-vibe-primary bg-vibe-soft/30">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h4 className="font-black dark:text-white">{req.fromUser.username}</h4>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase">Wants to join {req.spaceName}</p>
-                      </div>
-                      <div className="flex gap-2">
-                         <button onClick={() => API.acceptRequest(req.spaceId, req.id)} className="p-2 bg-vibe text-white rounded-xl"><Check size={20}/></button>
-                         <button className="p-2 bg-white dark:bg-slate-800 text-rose-500 rounded-xl"><X size={20}/></button>
-                      </div>
+          <div className="space-y-4">
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Active Links</p>
+            {spaces.length === 0 ? (
+              <div className="text-center opacity-30 py-20"><Users size={64} className="mx-auto mb-4" /><p className="font-black uppercase tracking-widest text-[10px]">No connections established</p></div>
+            ) : (
+              spaces.map(s => (
+                <Card key={s.id} className="cursor-pointer !p-8 border-none bg-white dark:bg-slate-900 shadow-2xl hover:scale-[1.02] active:scale-95 transition-all" onClick={() => navigate(`/space/${s.id}`)}>
+                  <div className="flex justify-between items-center">
+                    <div className="space-y-1">
+                      <h3 className="text-2xl font-black dark:text-white">{s.name}</h3>
+                      <Badge color="bg-emerald-50 text-emerald-500">{s.members.length} Users Linked</Badge>
                     </div>
-                  </Card>
-                ))}
-              </div>
+                    <div className="w-12 h-12 bg-vibe text-white rounded-2xl flex items-center justify-center shadow-vibe"><Play size={24} fill="currentColor" /></div>
+                  </div>
+                </Card>
+              ))
             )}
-            <div className="space-y-4">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">My Dimensions</p>
-              {spaces.length === 0 ? (
-                <div className="text-center opacity-30 py-20"><Users size={64} className="mx-auto mb-4" /><p className="font-black uppercase tracking-widest text-[10px]">No private worlds yet</p></div>
-              ) : (
-                spaces.map(s => (
-                  <Card key={s.id} className="cursor-pointer !p-8 border-none bg-white dark:bg-slate-900 shadow-2xl hover:scale-[1.02] active:scale-95 transition-all" onClick={() => navigate(`/space/${s.id}`)}>
-                    <div className="flex justify-between items-center">
-                      <div className="space-y-1">
-                        <h3 className="text-2xl font-black dark:text-white">{s.name}</h3>
-                        <Badge color="bg-emerald-50 text-emerald-500">{s.members.length}/2 Synced</Badge>
-                      </div>
-                      <div className="w-12 h-12 bg-vibe text-white rounded-2xl flex items-center justify-center shadow-vibe"><Play size={24} fill="currentColor" /></div>
-                    </div>
-                  </Card>
-                ))
-              )}
-            </div>
-          </>
+          </div>
         ) : (
           <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl mb-4 border border-indigo-100 dark:border-indigo-800">
+                <div className="flex items-start gap-4">
+                    <Signal className="text-vibe-primary shrink-0" size={24}/>
+                    <div>
+                        <h4 className="font-black text-sm dark:text-white uppercase mb-1">Direct Neural Link</h4>
+                        <p className="text-xs text-slate-500 leading-relaxed">Search for a username to establish a direct P2P tunnel. <strong>Both devices must be online</strong> to handshake.</p>
+                    </div>
+                </div>
+            </div>
+
             <div className="flex gap-2">
               <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search Username..." className="flex-1 bg-white dark:bg-slate-900 px-6 py-4 rounded-2xl outline-none font-bold dark:text-white border-2 border-transparent focus:border-vibe-primary transition-all" />
-              <button onClick={handleSearch} className="p-4 bg-vibe text-white rounded-2xl">{searching ? <Loader2 className="animate-spin" size={24}/> : <Search size={24}/>}</button>
+              <button onClick={handleSearch} className="p-4 bg-vibe text-white rounded-2xl">{searchStatus === 'searching' ? <Loader2 className="animate-spin" size={24}/> : <Search size={24}/>}</button>
             </div>
             
-            <div className="space-y-4">
-              {!searching && searchResults.length === 0 && searchQuery && (
-                <Card className="!p-8 bg-slate-100 dark:bg-slate-900 border-dashed border-2 border-slate-300 dark:border-slate-700 text-center space-y-4">
-                   <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto flex items-center justify-center text-slate-400"><Globe size={32}/></div>
-                   <div>
-                     <h4 className="font-black dark:text-white text-lg">User Not Found Locally</h4>
-                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">If <strong>"{searchQuery}"</strong> is on another device, they won't appear here without a server. <br/><br/>Use a <strong>Portal Link</strong> to connect instantly.</p>
-                   </div>
-                   <Button onClick={shareMyProfile} variant="primary" className="w-full">Share My Portal Link</Button>
-                </Card>
-              )}
-
-              {searchResults.map(s => (
-                <Card key={s.spaceId} className="!p-6 flex justify-between items-center border-none shadow-xl bg-white dark:bg-slate-900 animate-in slide-in-from-bottom-2">
+            {searchStatus === 'found' && (
+                <Card className="!p-6 flex justify-between items-center border-l-4 border-emerald-500 shadow-xl bg-white dark:bg-slate-900 animate-in slide-in-from-bottom-2">
                   <div>
-                    <h4 className="text-xl font-black dark:text-white">{s.username}</h4>
-                    <p className="text-[10px] font-black uppercase text-slate-400">{s.spaceName}</p>
+                    <h4 className="text-xl font-black dark:text-white">{searchQuery}</h4>
+                    <p className="text-[10px] font-black uppercase text-emerald-500">Signal Detected</p>
                   </div>
-                  {s.spaceId ? (
-                     <Button onClick={() => { API.sendJoinRequest(user, s.spaceId); handleSearch(); }} variant="secondary" className="px-4 py-2 text-xs">Request Join</Button>
-                  ) : (
-                     <Badge color="bg-slate-100 text-slate-400">Unavailable</Badge>
-                  )}
+                  <Button onClick={handleJoinRequest} variant="primary" className="px-6 py-3 text-xs">Connect</Button>
                 </Card>
-              ))}
-            </div>
+            )}
+
+            {searchStatus === 'offline' && (
+                <div className="text-center py-8 opacity-60">
+                    <Signal size={48} className="mx-auto mb-3 text-rose-400" />
+                    <h4 className="font-black text-rose-500">No Signal</h4>
+                    <p className="text-xs mt-1">User is offline or does not exist.</p>
+                </div>
+            )}
           </div>
         )}
       </div>
@@ -313,16 +295,31 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetch = () => {
-      const s = API.getSpace(spaceId!);
-      if (s) {
+    // Initial Load
+    const s = API.getSpace(spaceId!);
+    if (s) {
         setSpace(s);
         document.documentElement.setAttribute('data-theme', s.theme);
         if (currentUser.settings.darkMode) document.documentElement.classList.add('dark');
         else document.documentElement.classList.remove('dark');
-      } else navigate('/');
-    };
-    fetch(); const interval = setInterval(fetch, 2000); return () => clearInterval(interval);
+    } else navigate('/');
+
+    // Subscribe to P2P updates for this space
+    const unsubscribe = p2p.subscribe((payload: P2PPayload) => {
+        if (payload.type === 'NEW_MESSAGE' && payload.data.spaceId === spaceId) {
+            API.addMessageToSpace(spaceId!, payload.data.message);
+            // Refresh state
+            const updated = API.getSpace(spaceId!);
+            if(updated) setSpace(updated);
+        }
+        else if (payload.type === 'GAME_MOVE' && payload.data.spaceId === spaceId) {
+            API.updateSpace(spaceId!, { activeGame: payload.data.gameState });
+             const updated = API.getSpace(spaceId!);
+            if(updated) setSpace(updated);
+        }
+    });
+
+    return () => unsubscribe();
   }, [spaceId]);
 
   useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [space?.messages, aiLoading]);
@@ -334,21 +331,46 @@ const Space = ({ user: currentUser }: { user: User }) => {
       content: type === 'text' ? content : `Sent a ${type}`, timestamp: Date.now(), 
       type, mediaUrl: (type !== 'text' ? content : undefined), fileName, read: false
     };
+    
+    // Save locally
     const newMsgs = [...space.messages, msg];
     API.updateSpace(space.id, { messages: newMsgs });
+    setSpace({ ...space, messages: newMsgs });
+
+    // Broadcast via HoloNet
+    p2p.broadcast({
+        type: 'NEW_MESSAGE',
+        data: { spaceId: space.id, message: msg },
+        fromUsername: currentUser.username
+    });
     
     if (type === 'text' && content.toLowerCase().includes('@ai')) {
       setAiLoading(true);
       const reply = await AI.getAiResponse(content, newMsgs);
-      API.updateSpace(space.id, { 
-        messages: [...newMsgs, { 
+      const aiMsg: Message = { 
           id: 'ai-'+Date.now(), senderId: 'ai', senderName: 'Duo AI', 
           content: reply, timestamp: Date.now(), type: 'ai' 
-        }] 
-      });
+      };
+      
+      const aiMsgs = [...newMsgs, aiMsg];
+      API.updateSpace(space.id, { messages: aiMsgs });
+      setSpace({ ...space, messages: aiMsgs });
       setAiLoading(false);
     }
   };
+
+  const updateGame = (newBoard: (string|null)[]) => {
+      if(!space) return;
+      const newState = { board: newBoard, status: 'active' as const };
+      API.updateSpace(space.id, { activeGame: newState });
+      setSpace({...space, activeGame: newState});
+      
+      p2p.broadcast({
+          type: 'GAME_MOVE',
+          data: { spaceId: space.id, gameState: newState },
+          fromUsername: currentUser.username
+      });
+  }
 
   const startVoice = async () => {
     try {
@@ -381,19 +403,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
       sendMessage(type, reader.result as string, file.name);
     };
     reader.readAsDataURL(file);
-    // Reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const shareLink = () => {
-    const key = API.exportSpace(spaceId!);
-    const url = `${window.location.origin}${window.location.pathname}#?portal=${key}`;
-    if (navigator.share) {
-       navigator.share({ title: 'Join our DuoSpace', text: 'Access our private dimension here:', url });
-    } else {
-       navigator.clipboard.writeText(url);
-       alert("Portal Link Copied! Send this to your friend to add them to your cloud.");
-    }
   };
 
   if (!space) return null;
@@ -408,8 +418,8 @@ const Space = ({ user: currentUser }: { user: User }) => {
         <div className="text-center">
           <h2 className="font-black text-2xl dark:text-white leading-none tracking-tight">{space.name}</h2>
           <div className="mt-2 flex items-center justify-center gap-2">
-             <div className={`w-2 h-2 rounded-full ${isAlone ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`}></div>
-             <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">{isAlone ? 'Awaiting Duo' : 'Synced'}</span>
+             <div className={`w-2 h-2 rounded-full ${isAlone ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'}`}></div>
+             <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">{isAlone ? 'Awaiting Connection' : 'Neural Link Active'}</span>
           </div>
         </div>
         <button onClick={() => setActiveTab('vibe')} className="p-3 bg-vibe-soft text-vibe-primary rounded-2xl active:scale-90 transition-all"><Settings size={24} /></button>
@@ -418,14 +428,6 @@ const Space = ({ user: currentUser }: { user: User }) => {
       <div className="flex-1 overflow-y-auto no-scrollbar relative">
         {activeTab === 'chat' && (
           <div className="p-8 space-y-10 pb-56">
-            {isAlone && (
-               <div className="text-center p-14 bg-white/50 dark:bg-slate-900/50 rounded-[4rem] border border-dashed border-slate-200 dark:border-slate-800 backdrop-blur-md">
-                  <Globe size={64} className="mx-auto mb-8 text-vibe-primary animate-spin-slow" />
-                  <h4 className="font-black text-2xl dark:text-white mb-4 tracking-tighter">Private Dimension</h4>
-                  <p className="text-xs text-slate-500 font-bold max-w-[260px] mx-auto leading-relaxed mb-6">This world is visible to others who search for <strong>"{currentUser.username}"</strong>. Use the link below to add friends instantly across devices.</p>
-                  <Button onClick={shareLink} variant="primary" className="mx-auto text-xs py-4 px-10 rounded-full shadow-vibe">Beam Portal Link</Button>
-               </div>
-            )}
             {space.messages.map((m) => (
               <div key={m.id} className={`flex flex-col ${m.senderId === currentUser.id ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-4 duration-700`}>
                 <div className={`px-8 py-5 rounded-[2.5rem] font-bold shadow-sm max-w-[88%] ${m.senderId === currentUser.id ? 'bg-vibe text-white rounded-tr-none shadow-2xl shadow-vibe/20' : m.senderId === 'ai' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 rounded-tl-none' : 'bg-white dark:bg-slate-800 dark:text-white rounded-tl-none border border-slate-50 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-none'}`}>
@@ -457,11 +459,11 @@ const Space = ({ user: currentUser }: { user: User }) => {
                     if (space.activeGame.board[i]) return;
                     const board = [...space.activeGame.board];
                     board[i] = board.filter(Boolean).length % 2 === 0 ? 'X' : 'O';
-                    API.updateSpace(space.id, { activeGame: { board, status: 'active' }});
+                    updateGame(board);
                   }} className="w-24 h-24 bg-slate-50 dark:bg-slate-800 rounded-[2rem] text-5xl font-black dark:text-white flex items-center justify-center shadow-inner active:scale-90 transition-all hover:bg-slate-100 dark:hover:bg-slate-700">{cell}</button>
                 ))}
              </div>
-             <Button onClick={() => API.updateSpace(space.id, { activeGame: { board: Array(9).fill(null), status: 'active' }})} variant="secondary" className="px-12 py-4 rounded-full border-dashed font-black uppercase tracking-widest">Reset Combat</Button>
+             <Button onClick={() => updateGame(Array(9).fill(null))} variant="secondary" className="px-12 py-4 rounded-full border-dashed font-black uppercase tracking-widest">Reset Combat</Button>
           </div>
         )}
 

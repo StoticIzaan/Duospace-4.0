@@ -54,3 +54,12 @@ export interface DuoSpace {
 export interface AuthSession {
   user: User;
 }
+
+// P2P Types
+export type P2PMessageType = 'JOIN_REQUEST' | 'ACCEPT_JOIN' | 'SYNC_SPACE' | 'NEW_MESSAGE' | 'GAME_MOVE' | 'PING';
+
+export interface P2PPayload {
+  type: P2PMessageType;
+  data: any;
+  fromUsername: string;
+}
