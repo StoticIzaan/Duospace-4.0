@@ -3,6 +3,7 @@
   "description": "A luxury private world for you and your best friend.",
   "requestFramePermissions": [
     "microphone",
-    "camera"
+    "camera",
+    "geolocation"
   ]
 }

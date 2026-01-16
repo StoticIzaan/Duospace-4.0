@@ -7,7 +7,7 @@ import {
   Trash2, X, Mic, Image as ImageIcon, CheckCheck, 
   Palette, StopCircle, Volume2, Camera, FileUp, 
   Pause, Check, Reply, Settings, Pencil, Eraser,
-  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell
+  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2
 } from 'lucide-react';
 import * as API from './services/storage';
 import * as AI from './services/geminiService';
@@ -111,16 +111,31 @@ const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
 const Dashboard = ({ user }: { user: User }) => {
   const [spaces, setSpaces] = useState<DuoSpace[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<DuoSpace[]>([]);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [newSpaceName, setNewSpaceName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
   const [view, setView] = useState<'mine' | 'discover'>('mine');
+  const [searching, setSearching] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.hash.split('?')[1]);
+    const portal = params.get('portal');
+    if (portal) {
+      setTimeout(() => {
+        try {
+          const space = API.importSpace(portal, user);
+          navigate(`/space/${space.id}`, { replace: true });
+        } catch (e) { console.error(e); }
+      }, 500);
+    }
+  }, [location]);
 
   useEffect(() => {
     const fetch = () => {
-      const db = JSON.parse(localStorage.getItem('duospace_v9_db') || '{"spaces":[], "publicRegistry":[]}');
+      const db = JSON.parse(localStorage.getItem('duospace_v10_db') || '{"spaces":[], "publicRegistry":[]}');
       const mySpaces = db.spaces.filter((s: any) => s.members.some((m: any) => m.id === user.id));
       setSpaces(mySpaces);
       
@@ -134,15 +149,44 @@ const Dashboard = ({ user }: { user: User }) => {
 
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
-    setSearchResults(API.searchByUsername(searchQuery));
+    setSearching(true);
+    // Simulate network delay
+    setTimeout(() => {
+      setSearchResults(API.searchByUsername(searchQuery));
+      setSearching(false);
+    }, 800);
+  };
+
+  const getShareLink = () => {
+    if (spaces.length > 0) {
+      return API.exportSpace(spaces[0].id);
+    }
+    return '';
+  };
+
+  const shareMyProfile = () => {
+    if (spaces.length === 0) {
+       // Create a default space if none
+       API.createSpace(user, `${user.username}'s World`);
+    }
+    // Get the first space and share it
+    const s = spaces.length > 0 ? spaces[0] : API.getSpace(API.createSpace(user, `${user.username}'s World`).id)!;
+    const key = API.exportSpace(s.id);
+    const url = `${window.location.origin}${window.location.pathname}#?portal=${key}`;
+    if (navigator.share) {
+       navigator.share({ title: `Join ${user.username}`, url });
+    } else {
+       navigator.clipboard.writeText(url);
+       alert("Profile Link Copied! Send this to your friend.");
+    }
   };
 
   return (
-    <div className="max-w-md mx-auto h-full flex flex-col p-8 justify-between bg-slate-50 dark:bg-slate-950 overflow-hidden">
+    <div className="max-w-md mx-auto h-full flex flex-col p-8 justify-between bg-slate-50 dark:bg-slate-950 overflow-hidden transition-colors duration-500">
       <header className="flex justify-between items-center py-6">
         <div className="flex flex-col">
           <h2 className="text-4xl font-black dark:text-white tracking-tighter">Worlds</h2>
-          <Badge color="bg-vibe-soft text-vibe-primary w-fit mt-1">v9.0 Discovery</Badge>
+          <Badge color="bg-vibe-soft text-vibe-primary w-fit mt-1">Cloud v10.1</Badge>
         </div>
         <div className="flex gap-2">
           {pendingRequests.length > 0 && (
@@ -205,28 +249,34 @@ const Dashboard = ({ user }: { user: User }) => {
           <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex gap-2">
               <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search Username..." className="flex-1 bg-white dark:bg-slate-900 px-6 py-4 rounded-2xl outline-none font-bold dark:text-white border-2 border-transparent focus:border-vibe-primary transition-all" />
-              <button onClick={handleSearch} className="p-4 bg-vibe text-white rounded-2xl"><Search size={24}/></button>
+              <button onClick={handleSearch} className="p-4 bg-vibe text-white rounded-2xl">{searching ? <Loader2 className="animate-spin" size={24}/> : <Search size={24}/>}</button>
             </div>
+            
             <div className="space-y-4">
-              {searchResults.length === 0 && searchQuery ? (
-                <p className="text-center text-xs font-bold text-slate-400 py-10">No users found.</p>
-              ) : (
-                searchResults.map(s => (
-                  <Card key={s.id} className="!p-6 flex justify-between items-center border-none shadow-xl bg-white dark:bg-slate-900">
-                    <div>
-                      <h4 className="text-xl font-black dark:text-white">{s.members[0].username}</h4>
-                      <p className="text-[10px] font-black uppercase text-slate-400">{s.name}</p>
-                    </div>
-                    {s.members.some(m => m.id === user.id) ? (
-                       <Badge color="bg-emerald-50 text-emerald-500">Joined</Badge>
-                    ) : s.requests.some(r => r.fromUser.id === user.id) ? (
-                       <Badge color="bg-amber-50 text-amber-500">Pending</Badge>
-                    ) : (
-                       <Button onClick={() => { API.sendJoinRequest(user, s.id); handleSearch(); }} variant="secondary" className="px-4 py-2 text-xs">Join</Button>
-                    )}
-                  </Card>
-                ))
+              {!searching && searchResults.length === 0 && searchQuery && (
+                <Card className="!p-8 bg-slate-100 dark:bg-slate-900 border-dashed border-2 border-slate-300 dark:border-slate-700 text-center space-y-4">
+                   <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto flex items-center justify-center text-slate-400"><Globe size={32}/></div>
+                   <div>
+                     <h4 className="font-black dark:text-white text-lg">User Not Found Locally</h4>
+                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">If <strong>"{searchQuery}"</strong> is on another device, they won't appear here without a server. <br/><br/>Use a <strong>Portal Link</strong> to connect instantly.</p>
+                   </div>
+                   <Button onClick={shareMyProfile} variant="primary" className="w-full">Share My Portal Link</Button>
+                </Card>
               )}
+
+              {searchResults.map(s => (
+                <Card key={s.spaceId} className="!p-6 flex justify-between items-center border-none shadow-xl bg-white dark:bg-slate-900 animate-in slide-in-from-bottom-2">
+                  <div>
+                    <h4 className="text-xl font-black dark:text-white">{s.username}</h4>
+                    <p className="text-[10px] font-black uppercase text-slate-400">{s.spaceName}</p>
+                  </div>
+                  {s.spaceId ? (
+                     <Button onClick={() => { API.sendJoinRequest(user, s.spaceId); handleSearch(); }} variant="secondary" className="px-4 py-2 text-xs">Request Join</Button>
+                  ) : (
+                     <Badge color="bg-slate-100 text-slate-400">Unavailable</Badge>
+                  )}
+                </Card>
+              ))}
             </div>
           </div>
         )}
@@ -259,6 +309,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -323,12 +374,26 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
     const reader = new FileReader();
     reader.onload = () => {
       const type = file.type.startsWith('image/') ? 'image' : 'file';
       sendMessage(type, reader.result as string, file.name);
     };
     reader.readAsDataURL(file);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const shareLink = () => {
+    const key = API.exportSpace(spaceId!);
+    const url = `${window.location.origin}${window.location.pathname}#?portal=${key}`;
+    if (navigator.share) {
+       navigator.share({ title: 'Join our DuoSpace', text: 'Access our private dimension here:', url });
+    } else {
+       navigator.clipboard.writeText(url);
+       alert("Portal Link Copied! Send this to your friend to add them to your cloud.");
+    }
   };
 
   if (!space) return null;
@@ -357,8 +422,8 @@ const Space = ({ user: currentUser }: { user: User }) => {
                <div className="text-center p-14 bg-white/50 dark:bg-slate-900/50 rounded-[4rem] border border-dashed border-slate-200 dark:border-slate-800 backdrop-blur-md">
                   <Globe size={64} className="mx-auto mb-8 text-vibe-primary animate-spin-slow" />
                   <h4 className="font-black text-2xl dark:text-white mb-4 tracking-tighter">Private Dimension</h4>
-                  <p className="text-xs text-slate-500 font-bold max-w-[260px] mx-auto leading-relaxed mb-6">This world is locked. Others can search your username **"{currentUser.username}"** to request access.</p>
-                  <Badge color="bg-vibe-soft text-vibe-primary py-3 px-6 text-xs tracking-widest font-black">Searchable Username: {currentUser.username}</Badge>
+                  <p className="text-xs text-slate-500 font-bold max-w-[260px] mx-auto leading-relaxed mb-6">This world is visible to others who search for <strong>"{currentUser.username}"</strong>. Use the link below to add friends instantly across devices.</p>
+                  <Button onClick={shareLink} variant="primary" className="mx-auto text-xs py-4 px-10 rounded-full shadow-vibe">Beam Portal Link</Button>
                </div>
             )}
             {space.messages.map((m) => (
@@ -433,7 +498,8 @@ const Space = ({ user: currentUser }: { user: User }) => {
         <div className="fixed bottom-36 left-0 right-0 px-8 z-50">
           <div className="max-w-5xl mx-auto glass p-4 rounded-[3.5rem] shadow-5xl border border-white/20 flex items-center gap-4">
              <div className="flex gap-2">
-                <label className="p-4 text-slate-400 cursor-pointer hover:text-vibe-primary transition-all active:scale-90"><Paperclip size={28}/><input type="file" className="hidden" onChange={handleFileUpload} /></label>
+                <button onClick={() => fileInputRef.current?.click()} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Paperclip size={28}/></button>
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*, .pdf, .doc, .docx" />
                 <button onClick={() => setShowSketchpad(true)} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Pencil size={28}/></button>
              </div>
              <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." onKeyDown={(e) => { 
