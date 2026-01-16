@@ -1,121 +1,124 @@
 import { User } from '../types';
 
+type PeerType = any;
+type DataConnectionType = any;
+
 class P2PService {
-    private peer: any = null;
-    private connection: any = null;
-    private _user: User | null = null;
-    private _onMessage: ((data: any) => void) | null = null;
-    private _onStatus: ((status: string) => void) | null = null;
-    private _onInbox: ((request: any) => void) | null = null;
+  private peer: PeerType | null = null;
+  private connection: DataConnectionType | null = null;
+  private _user: User | null = null;
+  private _onMessage: ((data: any) => void) | null = null;
+  private _onStatus: ((status: string) => void) | null = null;
+  private _onInbox: ((request: any) => void) | null = null;
 
-    constructor() {
-        const saved = localStorage.getItem('duospace_p2p_v3');
-        if (saved) this._user = JSON.parse(saved);
-    }
+  constructor() {
+    const saved = localStorage.getItem('duospace_p2p_v3');
+    if (saved) this._user = JSON.parse(saved);
+  }
 
-    get user() {
-        return this._user;
-    }
+  get user() {
+    return this._user;
+  }
 
-    async register(username: string): Promise<User> {
-        const cleanName = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanName.length < 2) throw new Error('Name too short');
+  async register(username: string): Promise<User> {
+    const cleanName = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cleanName.length < 2) throw new Error('Name too short');
 
-        const user: User = {
-            id: cleanName,
-            username: username.trim(),
-            avatarColor: 'violet',
-            settings: { theme: 'violet', darkMode: true, aiTone: 'playful' }
-        };
+    const user: User = {
+      id: cleanName,
+      username: username.trim(),
+      avatarColor: 'violet',
+      settings: { theme: 'violet', darkMode: true, aiTone: 'playful' },
+    };
 
-        this._user = user;
-        localStorage.setItem('duospace_p2p_v3', JSON.stringify(user));
-        return user;
-    }
+    this._user = user;
+    localStorage.setItem('duospace_p2p_v3', JSON.stringify(user));
+    return user;
+  }
 
-    async init(callbacks: {
-        onMessage: (d: any) => void;
-        onStatus: (s: string) => void;
-        onInbox?: (req: any) => void;
-    }) {
-        if (!this._user) return;
-        if (typeof window === 'undefined') return;
+  async init(callbacks: {
+    onMessage: (d: any) => void;
+    onStatus: (s: string) => void;
+    onInbox?: (req: any) => void;
+  }) {
+    if (!this._user) return;
 
-        this._onMessage = callbacks.onMessage;
-        this._onStatus = callbacks.onStatus;
-        this._onInbox = callbacks.onInbox || null;
+    this._onMessage = callbacks.onMessage;
+    this._onStatus = callbacks.onStatus;
+    this._onInbox = callbacks.onInbox || null;
 
-        const { default: Peer } = await import('peerjs');
+    if (this.peer) this.peer.destroy();
 
-        if (this.peer) this.peer.destroy();
-        this.peer = new Peer(this._user.id);
+    // 🔥 LAZY LOAD peerjs (THIS FIXES THE BUILD)
+    const { default: Peer } = await import('peerjs');
 
-        this.peer.on('open', (id: string) => {
-            console.log('P2P Online:', id);
-            this._onStatus?.('ready');
-        });
+    this.peer = new Peer(this._user.id);
 
-        this.peer.on('connection', (conn: any) => {
-            conn.on('data', (data: any) => {
-                if (data.type === 'HANDSHAKE_REQ') {
-                    this._onInbox?.({ conn, user: data.user });
-                }
-            });
-        });
+    this.peer.on('open', (id: string) => {
+      console.log('P2P Online:', id);
+      this._onStatus?.('ready');
+    });
 
-        this.peer.on('error', (err: any) => {
-            if (err.type === 'unavailable-id') this._onStatus?.('name_taken');
-            else this._onStatus?.('error');
-        });
-    }
-
-    async sendRequest(targetName: string) {
-        if (!this.peer) return;
-
-        const cleanTarget = targetName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        const conn = this.peer.connect(cleanTarget);
-
-        conn.on('open', () => {
-            conn.send({ type: 'HANDSHAKE_REQ', user: this._user });
-            this._onStatus?.('request_sent');
-        });
-
-        conn.on('data', (data: any) => {
-            if (data.type === 'HANDSHAKE_ACCEPT') {
-                this.setupConnection(conn);
-            }
-        });
-    }
-
-    acceptRequest(conn: any) {
-        conn.send({ type: 'HANDSHAKE_ACCEPT', user: this._user });
-        this.setupConnection(conn);
-    }
-
-    private setupConnection(conn: any) {
-        this.connection = conn;
-        this._onStatus?.('connected');
-
-        conn.on('data', (data: any) => {
-            this._onMessage?.(data);
-        });
-
-        conn.on('close', () => {
-            this._onStatus?.('disconnected');
-            this.connection = null;
-        });
-    }
-
-    send(data: any) {
-        if (this.connection?.open) {
-            this.connection.send(data);
+    this.peer.on('connection', (conn: DataConnectionType) => {
+      conn.on('data', (data: any) => {
+        if (data.type === 'HANDSHAKE_REQ') {
+          this._onInbox?.({ conn, user: data.user });
         }
-    }
+      });
+    });
 
-    disconnect() {
-        this.connection?.close();
-        this.connection = null;
+    this.peer.on('error', (err: any) => {
+      if (err.type === 'unavailable-id') this._onStatus?.('name_taken');
+      else this._onStatus?.('error');
+    });
+  }
+
+  async sendRequest(targetName: string) {
+    if (!this.peer) return;
+
+    const cleanTarget = targetName.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const conn = this.peer.connect(cleanTarget);
+
+    conn.on('open', () => {
+      conn.send({ type: 'HANDSHAKE_REQ', user: this._user });
+      this._onStatus?.('request_sent');
+    });
+
+    conn.on('data', (data: any) => {
+      if (data.type === 'HANDSHAKE_ACCEPT') {
+        this.setupConnection(conn);
+      }
+    });
+  }
+
+  acceptRequest(conn: DataConnectionType) {
+    conn.send({ type: 'HANDSHAKE_ACCEPT', user: this._user });
+    this.setupConnection(conn);
+  }
+
+  private setupConnection(conn: DataConnectionType) {
+    this.connection = conn;
+    this._onStatus?.('connected');
+
+    conn.on('data', (data: any) => {
+      this._onMessage?.(data);
+    });
+
+    conn.on('close', () => {
+      this._onStatus?.('disconnected');
+      this.connection = null;
+    });
+  }
+
+  send(data: any) {
+    if (this.connection?.open) {
+      this.connection.send(data);
     }
+  }
+
+  disconnect() {
+    this.connection?.close();
+  }
 }
 
 export const p2p = new P2PService();
