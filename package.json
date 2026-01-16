@@ -1,4 +1,4 @@
-import Peer, { DataConnection } from 'peerjs';
+{import Peer, { DataConnection } from 'peerjs';
 
   "name": "duospace",
   "private": true,
