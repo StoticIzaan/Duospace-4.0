@@ -1,5 +1,4 @@
-{import Peer, { DataConnection } from 'peerjs';
-
+{
   "name": "duospace",
   "private": true,
   "version": "1.0.0",
