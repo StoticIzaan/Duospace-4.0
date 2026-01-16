@@ -1,4 +1,5 @@
-mport React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { 
   Heart, Users, Send, Gamepad2, MessageCircle, 
@@ -478,4 +479,3 @@ const App = () => {
   );
 };
 export default App;
-
