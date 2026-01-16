@@ -4,7 +4,7 @@ import {
   Search, User as UserIcon, Zap, MessageCircle, Bell, UserPlus, 
   CheckCircle2, Rocket, Waves, XCircle, Settings, Image as ImageIcon,
   Mic, MicOff, Moon, Sun, ShieldCheck, Users, Palette, Radio, Share2,
-  LayoutGrid, Users2
+  LayoutGrid, Users2, Trash2, Power, PlugZap
 } from 'lucide-react';
 import { p2p } from './services/peerService'; 
 import { User, Message, Friend, ThemeColor } from './types';
@@ -18,15 +18,32 @@ const App = () => {
   const [inbox, setInbox] = useState<any[]>([]);
   const [activeFriend, setActiveFriend] = useState<Friend | null>(null);
   const [status, setStatus] = useState('offline');
+  const [activeSessions, setActiveSessions] = useState<string[]>([]);
+  // Chat history cache to preserve messages when navigating: { [sessionId]: Message[] }
+  // sessionId is 'host' if hosting, or friendId if guest
+  const [chatHistory, setChatHistory] = useState<Record<string, Message[]>>({});
 
   useEffect(() => {
     if (user) {
         p2p.init({
-            onMessage: (m) => window.dispatchEvent(new CustomEvent('p2p_msg', { detail: m })),
+            onMessage: (m) => {
+                // Dispatch event for Room component if active
+                window.dispatchEvent(new CustomEvent('p2p_msg', { detail: m }));
+                
+                // Update global history store
+                setChatHistory(prev => {
+                    const sessionId = p2p.isHostMode ? 'host' : m.sender_id; // Approximation, better to use active connection ID
+                    const existing = prev[sessionId] || [];
+                    if (existing.some(msg => msg.id === m.id)) return prev;
+                    return { ...prev, [sessionId]: [...existing, m] };
+                });
+            },
             onStatus: setStatus,
             onInbox: (req) => setInbox(prev => [...prev, req]),
+            onConnectionsChanged: (conns) => setActiveSessions(conns),
             onFriendAdded: (f) => {
                 setFriends(prev => {
+                    if (prev.find(existing => existing.id === f.id)) return prev;
                     const next = [...prev, { id: f.id, username: f.username, status: 'online' }];
                     localStorage.setItem('duospace_friends_v5', JSON.stringify(next));
                     return next;
@@ -44,6 +61,30 @@ const App = () => {
       localStorage.setItem('duospace_user_v5', JSON.stringify(updatedUser));
   };
 
+  const handleLogout = () => {
+      if (confirm("Are you sure you want to disconnect? This will clear your session.")) {
+          localStorage.removeItem('duospace_user_v5');
+          p2p.destroy();
+          setUser(null);
+          setView('auth');
+      }
+  };
+
+  // Helper to get current session ID for history
+  const getCurrentSessionId = () => {
+      if (!activeFriend) return 'host';
+      return activeFriend.id;
+  };
+
+  const updateHistory = (msg: Message) => {
+      const sid = getCurrentSessionId();
+      setChatHistory(prev => {
+          const list = prev[sid] || [];
+          if (list.some(m => m.id === msg.id)) return prev;
+          return { ...prev, [sid]: [...list, msg] };
+      });
+  };
+
   if (!user) return <Auth onLogin={setUser} />;
   
   return (
@@ -57,14 +98,25 @@ const App = () => {
                 setView={setView} 
                 setActiveFriend={setActiveFriend}
                 updateSettings={updateUserSettings}
+                setFriends={setFriends}
+                onLogout={handleLogout}
+                activeSessions={activeSessions}
             />
         )}
         {view === 'room' && (
             <Room 
                 user={user} 
-                friend={activeFriend} // If null, I am HOST
+                friend={activeFriend} 
                 friendsList={friends}
-                onBack={() => { p2p.disconnect(); setView('dash'); setActiveFriend(null); }} 
+                initialMessages={chatHistory[getCurrentSessionId()] || []}
+                onUpdateHistory={updateHistory}
+                onBack={() => setView('dash')} // Don't disconnect, just go back
+                onLeave={() => {
+                    p2p.disconnect();
+                    setChatHistory(prev => ({ ...prev, [getCurrentSessionId()]: [] }));
+                    setView('dash');
+                    setActiveFriend(null);
+                }}
             />
         )}
     </div>
@@ -98,23 +150,22 @@ const Auth = ({ onLogin }: { onLogin: (u: User) => void }) => {
     );
 };
 
-const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, updateSettings }: any) => {
+const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, updateSettings, setFriends, onLogout, activeSessions }: any) => {
     const [search, setSearch] = useState('');
     const [showSettings, setShowSettings] = useState(false);
-    const [mobileTab, setMobileTab] = useState<'portal' | 'friends'>('portal');
+    const [mobileTab, setMobileTab] = useState<'portal' | 'friends' | 'active'>('portal');
 
     const handleAction = (req: any, index: number) => {
         if (req.type === 'friend') {
             p2p.acceptFriend(req.conn);
             const newFriend = { id: req.user.id, username: req.user.username, status: 'online' };
-            const savedFriends = JSON.parse(localStorage.getItem('duospace_friends_v5') || '[]');
-            // Avoid duplicates
-            if (!savedFriends.find((f: Friend) => f.id === newFriend.id)) {
-               localStorage.setItem('duospace_friends_v5', JSON.stringify([...savedFriends, newFriend]));
-               window.location.reload(); 
-            }
+            setFriends((prev: Friend[]) => {
+                if (prev.find(f => f.id === newFriend.id)) return prev;
+                const updated = [...prev, newFriend];
+                localStorage.setItem('duospace_friends_v5', JSON.stringify(updated));
+                return updated;
+            });
         } else {
-            // Join Room
             setActiveFriend(req.user);
             p2p.connectToRoom(req.user.id);
             setView('room');
@@ -123,14 +174,26 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
     };
 
     const handleCreateRoom = () => {
-        // I am the host, so activeFriend is null
         setActiveFriend(null);
+        setView('room');
+    };
+
+    const handleResumeSession = (peerId: string) => {
+        // Find friend object if possible
+        const friend = friends.find((f: Friend) => f.id === peerId);
+        // If I am hosting, activeFriend stays null. If I am connected to someone, activeFriend is them.
+        // We need to know if we are Host or Guest for this session.
+        if (p2p.isHostMode) {
+             setActiveFriend(null); // I am host
+        } else {
+             setActiveFriend(friend || { id: peerId, username: peerId, status: 'online' });
+        }
         setView('room');
     };
 
     return (
         <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
-            {/* Sidebar (Friends) - Hidden on mobile unless active tab */}
+            {/* Sidebar (Friends) */}
             <aside className={`${mobileTab === 'friends' ? 'flex' : 'hidden'} md:flex w-full md:w-[350px] lg:w-[450px] border-r dark:border-slate-800 flex-col shrink-0 bg-white/40 dark:bg-slate-900/40 backdrop-blur-3xl h-full pb-20 md:pb-0`}>
                 <div className="p-6 md:p-10 border-b dark:border-slate-800 flex items-center justify-between">
                     <div>
@@ -164,13 +227,7 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                             </div>
                         </Card>
                     ))}
-
-                    {friends.length === 0 && (
-                        <div className="text-center py-12 md:py-20 opacity-20">
-                            <Users size={48} className="mx-auto mb-4 md:w-16 md:h-16"/>
-                            <p className="text-xs md:text-sm font-black uppercase tracking-widest">Dimension Empty</p>
-                        </div>
-                    )}
+                    {friends.length === 0 && <div className="text-center py-12 opacity-20"><Users size={48} className="mx-auto"/><p className="mt-2 text-xs font-black">No Friends</p></div>}
                 </div>
 
                 <div className="p-6 md:p-8 bg-white/20 dark:bg-black/20 border-t dark:border-slate-800">
@@ -185,85 +242,110 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                 </div>
             </aside>
 
-            {/* Main Surface (Portal) - Hidden on mobile unless active tab */}
-            <main className={`${mobileTab === 'portal' ? 'flex' : 'hidden'} md:flex flex-1 p-6 md:p-20 flex-col items-center justify-center relative bg-slate-100/50 dark:bg-slate-950/50 pb-24 md:pb-20 overflow-y-auto`}>
+            {/* Main Surface */}
+            <main className={`${mobileTab === 'portal' || mobileTab === 'active' ? 'flex' : 'hidden'} md:flex flex-1 p-6 md:p-20 flex-col items-center justify-center relative bg-slate-100/50 dark:bg-slate-950/50 pb-24 md:pb-20 overflow-y-auto`}>
                 <div className="max-w-4xl w-full space-y-8 md:space-y-12">
-                    <div className="space-y-4 md:space-y-6 text-center">
-                        <h1 className="text-5xl md:text-8xl font-black tracking-tighter dark:text-white">Portal Hub.</h1>
-                        <p className="text-lg md:text-2xl text-slate-400 font-medium px-4">Create a private room first, then invite your friends.</p>
-                    </div>
+                    
+                    {/* Active Sessions Tab View (Mobile specific logic or Integrated in Desktop) */}
+                    {(mobileTab === 'active' || (mobileTab === 'portal' && activeSessions.length > 0)) && (
+                         <div className="space-y-4 animate-slide-up">
+                            <div className="flex items-center gap-2 px-2">
+                                <PlugZap className="text-emerald-500 animate-pulse" />
+                                <h3 className="text-xl md:text-2xl font-black uppercase tracking-wider text-slate-500">Active Links ({activeSessions.length})</h3>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {activeSessions.map((peerId: string) => {
+                                    const friend = friends.find((f: Friend) => f.id === peerId);
+                                    const label = p2p.isHostMode ? `Hosting Network (${activeSessions.length} Peers)` : `Linked to: ${friend?.username || peerId}`;
+                                    // Deduplicate display if host
+                                    if (p2p.isHostMode && peerId !== activeSessions[0]) return null;
+                                    
+                                    return (
+                                        <Card key={peerId} className="!p-6 flex items-center justify-between border-l-4 border-l-emerald-500 bg-white dark:bg-slate-900">
+                                            <div>
+                                                <h4 className="font-black text-lg">{label}</h4>
+                                                <p className="text-xs text-emerald-500 font-bold uppercase tracking-wider">Signal Strong</p>
+                                            </div>
+                                            <Button onClick={() => handleResumeSession(peerId)}>Resume</Button>
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                         </div>
+                    )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
-                        {/* Initialize Room Card - MAIN ACTION */}
-                        <button onClick={handleCreateRoom} className="text-left group outline-none w-full">
-                            <Card className="!p-8 md:!p-12 h-full space-y-4 md:space-y-6 bg-white dark:bg-slate-900 transition-all group-hover:scale-[1.02] group-active:scale-[0.98] border-4 border-transparent hover:border-vibe shadow-2xl !rounded-4xl md:!rounded-5xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-64 h-64 bg-vibe opacity-5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:opacity-10 transition-opacity"></div>
-                                <div className="w-16 h-16 md:w-24 md:h-24 bg-vibe rounded-2xl md:rounded-3xl flex items-center justify-center text-white shadow-2xl group-hover:rotate-12 transition-transform">
-                                    <Plus size={32} className="md:w-12 md:h-12"/>
+                    {mobileTab === 'portal' && (
+                        <>
+                        <div className="space-y-4 md:space-y-6 text-center">
+                            <h1 className="text-5xl md:text-8xl font-black tracking-tighter dark:text-white">Portal Hub.</h1>
+                            <p className="text-lg md:text-2xl text-slate-400 font-medium px-4">Create a private room first, then invite your friends.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
+                            {/* Create Room */}
+                            <button onClick={handleCreateRoom} className="text-left group outline-none w-full">
+                                <Card className="!p-8 md:!p-12 h-full space-y-4 md:space-y-6 bg-white dark:bg-slate-900 transition-all group-hover:scale-[1.02] group-active:scale-[0.98] border-4 border-transparent hover:border-vibe shadow-2xl !rounded-4xl md:!rounded-5xl relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-64 h-64 bg-vibe opacity-5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:opacity-10 transition-opacity"></div>
+                                    <div className="w-16 h-16 md:w-24 md:h-24 bg-vibe rounded-2xl md:rounded-3xl flex items-center justify-center text-white shadow-2xl group-hover:rotate-12 transition-transform">
+                                        <Plus size={32} className="md:w-12 md:h-12"/>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-2xl md:text-4xl font-black mb-2">Create Room</h3>
+                                        <p className="text-sm md:text-lg text-slate-400 font-medium">Initialize a secure dimension and invite friends.</p>
+                                    </div>
+                                </Card>
+                            </button>
+
+                            {/* Inbox */}
+                            <Card className="!p-8 md:!p-12 space-y-4 md:space-y-6 bg-white/50 dark:bg-slate-900/50 border-4 border-transparent hover:border-emerald-500 shadow-2xl !rounded-4xl md:!rounded-5xl overflow-y-auto max-h-[300px] md:max-h-[500px]">
+                                <div className="flex items-center justify-between">
+                                    <div className="w-12 h-12 md:w-16 md:h-16 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl md:rounded-3xl flex items-center justify-center text-emerald-500 shadow-xl">
+                                        <Bell size={24} className="md:w-8 md:h-8"/>
+                                    </div>
+                                    {inbox.length > 0 && <Badge color="bg-rose-500 text-white">{inbox.length}</Badge>}
                                 </div>
-                                <div>
-                                    <h3 className="text-2xl md:text-4xl font-black mb-2">Create Room</h3>
-                                    <p className="text-sm md:text-lg text-slate-400 font-medium">Initialize a secure dimension and invite friends to join you.</p>
-                                </div>
-                                <div className="pt-2 md:pt-4 flex items-center gap-3 text-vibe-primary font-black uppercase tracking-widest text-[10px] md:text-xs">
-                                    <span>Start Hosting</span>
-                                    <ArrowLeft className="rotate-180 group-hover:translate-x-2 transition-transform" />
+                                <h3 className="text-2xl md:text-3xl font-black">Inbox Signals</h3>
+                                <div className="space-y-3 md:space-y-4">
+                                    {inbox.map((req: any, i: number) => (
+                                        <div key={i} className="flex items-center justify-between p-4 md:p-6 bg-slate-100 dark:bg-slate-800 rounded-2xl md:rounded-3xl border-2 dark:border-slate-700 animate-message-pop">
+                                            <div>
+                                                <p className="font-black text-base md:text-lg">{req.user.username}</p>
+                                                <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-50">{req.type === 'friend' ? 'Friend Req' : 'Invite'}</p>
+                                            </div>
+                                            <button onClick={() => handleAction(req, i)} className="p-3 md:p-4 bg-vibe text-white rounded-xl md:rounded-2xl shadow-xl hover:scale-110 transition-all"><CheckCircle2 size={18} /></button>
+                                        </div>
+                                    ))}
+                                    {inbox.length === 0 && <p className="text-xs md:text-sm font-black text-slate-400 italic">No incoming dimension signals...</p>}
                                 </div>
                             </Card>
-                        </button>
-
-                        <Card className="!p-8 md:!p-12 space-y-4 md:space-y-6 bg-white/50 dark:bg-slate-900/50 border-4 border-transparent hover:border-emerald-500 shadow-2xl !rounded-4xl md:!rounded-5xl overflow-y-auto max-h-[300px] md:max-h-[500px]">
-                            <div className="flex items-center justify-between">
-                                <div className="w-12 h-12 md:w-16 md:h-16 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl md:rounded-3xl flex items-center justify-center text-emerald-500 shadow-xl">
-                                    <Bell size={24} className="md:w-8 md:h-8"/>
-                                </div>
-                                {inbox.length > 0 && <Badge color="bg-rose-500 text-white">{inbox.length}</Badge>}
-                            </div>
-                            <h3 className="text-2xl md:text-3xl font-black">Inbox Signals</h3>
-                            <div className="space-y-3 md:space-y-4">
-                                {inbox.map((req: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between p-4 md:p-6 bg-slate-100 dark:bg-slate-800 rounded-2xl md:rounded-3xl border-2 dark:border-slate-700 animate-message-pop">
-                                        <div>
-                                            <p className="font-black text-base md:text-lg">{req.user.username}</p>
-                                            <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-50">{req.type === 'friend' ? 'Friend Request' : 'Room Invite'}</p>
-                                        </div>
-                                        <button onClick={() => handleAction(req, i)} className="p-3 md:p-4 bg-vibe text-white rounded-xl md:rounded-2xl shadow-xl hover:scale-110 transition-all">
-                                            <CheckCircle2 size={18} className="md:w-6 md:h-6"/>
-                                        </button>
-                                    </div>
-                                ))}
-                                {inbox.length === 0 && <p className="text-xs md:text-sm font-black text-slate-400 italic">No incoming dimension signals...</p>}
-                            </div>
-                        </Card>
-                    </div>
+                        </div>
+                        </>
+                    )}
                 </div>
             </main>
 
             {/* Mobile Bottom Navigation */}
             <div className="md:hidden absolute bottom-0 inset-x-0 h-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t dark:border-slate-800 flex items-center justify-around z-40 px-6 pb-2">
-                <button 
-                    onClick={() => setMobileTab('friends')}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${mobileTab === 'friends' ? 'text-vibe-primary scale-110' : 'text-slate-400'}`}
-                >
-                    <Users2 size={28} />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Friends</span>
+                <button onClick={() => setMobileTab('friends')} className={`flex flex-col items-center gap-1 p-2 ${mobileTab === 'friends' ? 'text-vibe-primary scale-110' : 'text-slate-400'}`}>
+                    <Users2 size={28} /><span className="text-[10px] font-black uppercase">Friends</span>
                 </button>
                 <div className="w-px h-8 bg-slate-200 dark:bg-slate-800"></div>
-                <button 
-                    onClick={() => setMobileTab('portal')}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all ${mobileTab === 'portal' ? 'text-vibe-primary scale-110' : 'text-slate-400'}`}
-                >
-                    <LayoutGrid size={28} />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Portal</span>
+                <button onClick={() => setMobileTab('portal')} className={`flex flex-col items-center gap-1 p-2 ${mobileTab === 'portal' ? 'text-vibe-primary scale-110' : 'text-slate-400'}`}>
+                    <LayoutGrid size={28} /><span className="text-[10px] font-black uppercase">Portal</span>
+                </button>
+                <div className="w-px h-8 bg-slate-200 dark:bg-slate-800"></div>
+                <button onClick={() => setMobileTab('active')} className={`flex flex-col items-center gap-1 p-2 relative ${mobileTab === 'active' ? 'text-vibe-primary scale-110' : 'text-slate-400'}`}>
+                    {activeSessions.length > 0 && <span className="absolute top-1 right-2 w-2 h-2 bg-emerald-500 rounded-full animate-pulse"/>}
+                    <PlugZap size={28} /><span className="text-[10px] font-black uppercase">Active</span>
                 </button>
             </div>
             
-            {showSettings && <SettingsPanel user={user} updateSettings={updateSettings} onClose={() => setShowSettings(false)} />}
+            {showSettings && <SettingsPanel user={user} updateSettings={updateSettings} onClose={() => setShowSettings(false)} onLogout={onLogout} />}
         </div>
     );
 };
 
-const SettingsPanel = ({ user, updateSettings, onClose }: any) => (
+const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: any) => (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6 md:p-12 bg-black/80 backdrop-blur-xl animate-in fade-in duration-300">
         <Card className="w-full max-w-3xl !p-8 md:!p-16 space-y-6 md:space-y-10 animate-slide-up relative !rounded-4xl md:!rounded-5xl border-4 border-white/10 shadow-[0_0_100px_rgba(124,58,237,0.3)]">
             <button onClick={onClose} className="absolute top-6 right-6 md:top-10 md:right-10 text-slate-400 hover:text-rose-500 transition-all active:scale-90"><XCircle size={32} className="md:w-12 md:h-12"/></button>
@@ -299,15 +381,28 @@ const SettingsPanel = ({ user, updateSettings, onClose }: any) => (
                     </div>
                 </div>
             </div>
-            
-            <Button onClick={onClose} className="w-full !py-5 md:!py-6 !text-base md:!text-lg !rounded-2xl md:!rounded-3xl">Synchronize Changes</Button>
+
+            <div className="pt-6 border-t dark:border-white/10">
+                <Button onClick={onLogout} variant="danger" className="w-full !py-5 md:!py-6 !text-base md:!text-lg !rounded-2xl md:!rounded-3xl">
+                    <Power className="mr-2" size={20}/> Disconnect (Logout)
+                </Button>
+            </div>
         </Card>
     </div>
 );
 
-const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Friend | null, friendsList: Friend[], onBack: () => void }) => {
-    const [messages, setMessages] = useState<Message[]>([]);
+const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHistory, onLeave }: { 
+    user: User, 
+    friend: Friend | null, 
+    friendsList: Friend[], 
+    onBack: () => void,
+    initialMessages: Message[],
+    onUpdateHistory: (m: Message) => void,
+    onLeave: () => void
+}) => {
+    const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState('');
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isRecording, setIsRecording] = useState(false);
     const [showInvite, setShowInvite] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -315,10 +410,14 @@ const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Frien
     const isHost = !friend;
 
     useEffect(() => {
+        // Sync local state if initial messages change (e.g. resumption)
+        setMessages(initialMessages);
+    }, [initialMessages]);
+
+    useEffect(() => {
         const handler = (e: any) => {
             const newMsg = e.detail;
             setMessages(prev => {
-                // De-duplication: Check if message ID already exists
                 if (prev.some(m => m.id === newMsg.id)) return prev;
                 return [...prev, newMsg];
             });
@@ -328,6 +427,15 @@ const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Frien
     }, []);
 
     useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+    const handleSend = () => {
+        if (imagePreview) {
+            send('image', undefined, imagePreview);
+            setImagePreview(null);
+        } else if (input.trim()) {
+            send('text', input);
+        }
+    };
 
     const send = (type: Message['type'] = 'text', content?: string, media_url?: string) => {
         const msg: Message = {
@@ -340,12 +448,16 @@ const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Frien
             timestamp: Date.now()
         };
         
-        // Optimistic UI update with de-duplication check
+        // Update local UI
         setMessages(prev => {
             if (prev.some(m => m.id === msg.id)) return prev;
             return [...prev, msg];
         });
+        
+        // Update History in parent
+        onUpdateHistory(msg);
 
+        // Send via P2P
         p2p.send({ type: 'CHAT', msg });
         setInput('');
 
@@ -360,6 +472,7 @@ const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Frien
                     timestamp: Date.now()
                 };
                 setMessages(prev => [...prev, aiMsg]);
+                onUpdateHistory(aiMsg);
                 p2p.send({ type: 'CHAT', msg: aiMsg });
             });
         }
@@ -390,7 +503,10 @@ const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Frien
         if (file) {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            reader.onloadend = () => send('image', undefined, reader.result as string);
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+                e.target.value = '';
+            };
         }
     };
 
@@ -402,24 +518,26 @@ const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Frien
     return (
         <div className="h-full flex flex-col max-w-7xl mx-auto w-full bg-white dark:bg-slate-900 shadow-[0_50px_100px_rgba(0,0,0,0.3)] overflow-hidden transition-all duration-500 ring-1 ring-white/10 relative">
             <header className="p-4 md:p-10 border-b-4 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-2xl z-20">
-                <button onClick={onBack} className="p-3 md:p-5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl md:rounded-3xl transition-all active:scale-90"><ArrowLeft size={24} className="md:w-8 md:h-8"/></button>
-                <div className="text-center">
-                    <h2 className="text-xl md:text-4xl font-black tracking-tighter">
-                        {isHost ? "Your Portal" : friend?.username}
-                    </h2>
-                    <div className="flex items-center gap-2 md:gap-3 justify-center mt-1 md:mt-2">
-                        <span className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#10b981]"></span>
-                        <span className="text-[10px] md:text-xs font-black uppercase tracking-[0.3em] opacity-40">
-                            {isHost ? "Hosting" : "Connected"}
-                        </span>
+                <div className="flex items-center gap-3">
+                    <button onClick={onBack} className="p-3 md:p-5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl md:rounded-3xl transition-all active:scale-90"><ArrowLeft size={24} className="md:w-8 md:h-8"/></button>
+                    <div className="flex flex-col">
+                         <h2 className="text-lg md:text-3xl font-black tracking-tighter line-clamp-1">{isHost ? "Your Portal" : friend?.username}</h2>
+                         <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span className="text-[10px] font-black uppercase opacity-40">Live</span>
+                         </div>
                     </div>
                 </div>
+                
                 <div className="flex gap-2 md:gap-3">
                     {isHost && (
                         <button onClick={() => setShowInvite(true)} className="p-3 md:p-5 bg-vibe text-white rounded-2xl md:rounded-3xl hover:scale-105 transition-all shadow-xl shadow-vibe/20">
                             <Share2 size={24} className="md:w-8 md:h-8"/>
                         </button>
                     )}
+                    <button onClick={onLeave} className="p-3 md:p-5 bg-rose-50/50 dark:bg-rose-900/20 text-rose-500 rounded-2xl md:rounded-3xl hover:bg-rose-500 hover:text-white transition-all">
+                        <LogOut size={24} className="md:w-8 md:h-8"/>
+                    </button>
                 </div>
             </header>
 
@@ -454,26 +572,42 @@ const Room = ({ user, friend, friendsList, onBack }: { user: User, friend: Frien
             </div>
 
             <div className="p-4 md:p-12 border-t-4 dark:border-slate-800 shrink-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-2xl">
-                <Card className="flex items-center gap-3 md:gap-6 !p-3 md:!p-4 shadow-2xl border-2 md:border-4 dark:border-white/10 !rounded-[2.5rem] md:!rounded-[3.5rem] bg-white dark:bg-slate-950">
-                    <div className="flex gap-1 md:gap-2">
-                        <label className="p-3 md:p-5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-all cursor-pointer text-slate-400 hover:text-vibe">
-                            <ImageIcon size={24} className="md:w-9 md:h-9"/>
-                            <input type="file" className="hidden" accept="image/*" onChange={onImageChange} />
-                        </label>
-                        <button onClick={toggleRecording} className={`p-3 md:p-5 rounded-full transition-all ${isRecording ? 'bg-rose-500 text-white animate-pulse shadow-lg' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-vibe'}`}>
-                            {isRecording ? <MicOff size={24} className="md:w-9 md:h-9"/> : <Mic size={24} className="md:w-9 md:h-9"/>}
+                <Card className={`flex items-center gap-3 md:gap-6 !p-3 md:!p-4 shadow-2xl border-2 md:border-4 dark:border-white/10 !rounded-[2.5rem] md:!rounded-[3.5rem] bg-white dark:bg-slate-950 transition-all ${imagePreview ? 'flex-col items-stretch !rounded-[2rem]' : ''}`}>
+                    {imagePreview && (
+                        <div className="relative w-full h-40 md:h-60 rounded-3xl overflow-hidden border-4 border-white/10 bg-black/50 mb-2 group">
+                            <img src={imagePreview} className="w-full h-full object-contain" />
+                            <button onClick={() => setImagePreview(null)} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-rose-500 transition-colors">
+                                <XCircle size={24}/>
+                            </button>
+                        </div>
+                    )}
+                    
+                    <div className="flex items-center gap-3 md:gap-6 w-full">
+                        <div className="flex gap-1 md:gap-2">
+                            <label className={`p-3 md:p-5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-all cursor-pointer ${imagePreview ? 'text-vibe' : 'text-slate-400 hover:text-vibe'}`}>
+                                <ImageIcon size={24} className="md:w-9 md:h-9"/>
+                                <input type="file" className="hidden" accept="image/*" onChange={onImageChange} />
+                            </label>
+                            <button onClick={toggleRecording} className={`p-3 md:p-5 rounded-full transition-all ${isRecording ? 'bg-rose-500 text-white animate-pulse shadow-lg' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-vibe'}`}>
+                                {isRecording ? <MicOff size={24} className="md:w-9 md:h-9"/> : <Mic size={24} className="md:w-9 md:h-9"/>}
+                            </button>
+                        </div>
+                        
+                        {!imagePreview && (
+                            <input 
+                                value={input} 
+                                onChange={e => setInput(e.target.value)} 
+                                onKeyDown={e => e.key === 'Enter' && handleSend()} 
+                                className="flex-1 bg-transparent outline-none font-black text-xl md:text-3xl px-2 md:px-6 placeholder:opacity-20 placeholder:text-slate-400 min-w-0" 
+                                placeholder="Signal..." 
+                            />
+                        )}
+                        {imagePreview && <div className="flex-1 text-slate-400 font-bold px-4 italic">Image attached...</div>}
+                        
+                        <button onClick={handleSend} className={`w-14 h-14 md:w-20 md:h-20 bg-vibe text-white rounded-[1.5rem] md:rounded-[2rem] flex items-center justify-center shadow-2xl shadow-vibe/40 active:scale-90 transition-all hover:brightness-110 shrink-0 ${!input.trim() && !imagePreview ? 'opacity-50 grayscale' : ''}`}>
+                            <Send size={24} className="md:w-10 md:h-10"/>
                         </button>
                     </div>
-                    <input 
-                        value={input} 
-                        onChange={e => setInput(e.target.value)} 
-                        onKeyDown={e => e.key === 'Enter' && send('text', input)} 
-                        className="flex-1 bg-transparent outline-none font-black text-xl md:text-3xl px-2 md:px-6 placeholder:opacity-20 placeholder:text-slate-400 min-w-0" 
-                        placeholder="Signal..." 
-                    />
-                    <button onClick={() => send('text', input)} className="w-14 h-14 md:w-20 md:h-20 bg-vibe text-white rounded-[1.5rem] md:rounded-[2rem] flex items-center justify-center shadow-2xl shadow-vibe/40 active:scale-90 transition-all hover:brightness-110 shrink-0">
-                        <Send size={24} className="md:w-10 md:h-10"/>
-                    </button>
                 </Card>
             </div>
 

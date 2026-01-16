@@ -5,13 +5,14 @@ class P2PService {
     private connections: any[] = []; // Array to hold multiple guest connections
     private _user: User | null = null;
     // Track if we are the "Host" (meaning we are accepting connections, not just a guest)
-    private isHost: boolean = false;
+    public isHostMode: boolean = false;
     
     private callbacks = {
         onMessage: (m: Message) => {},
         onStatus: (s: string) => {},
         onInbox: (req: any) => {},
-        onFriendAdded: (friend: any) => {}
+        onFriendAdded: (friend: any) => {},
+        onConnectionsChanged: (conns: string[]) => {}
     };
 
     constructor() {
@@ -43,9 +44,9 @@ class P2PService {
         return user;
     }
 
-    async init(callbacks: typeof this.callbacks) {
+    async init(callbacks: Partial<typeof this.callbacks>) {
         if (!this._user) return;
-        this.callbacks = callbacks;
+        this.callbacks = { ...this.callbacks, ...callbacks };
 
         if (this.peer) return;
 
@@ -59,7 +60,7 @@ class P2PService {
 
             this.peer.on('connection', (conn: any) => {
                 // If we receive a connection, we are acting as a Host for that link
-                this.isHost = true;
+                this.isHostMode = true;
                 this.setupConnection(conn);
             });
 
@@ -76,6 +77,7 @@ class P2PService {
         conn.on('open', () => {
             if (!this.connections.find(c => c.peer === conn.peer)) {
                 this.connections.push(conn);
+                this.emitConnections();
             }
             this.callbacks.onStatus('connected');
         });
@@ -84,8 +86,9 @@ class P2PService {
         
         conn.on('close', () => {
             this.connections = this.connections.filter(c => c.peer !== conn.peer);
+            this.emitConnections();
             if (this.connections.length === 0) {
-                this.isHost = false; // Reset if everyone leaves
+                this.isHostMode = false; // Reset if everyone leaves
                 this.callbacks.onStatus('ready');
             }
         });
@@ -107,7 +110,7 @@ class P2PService {
                 this.callbacks.onMessage(data.msg);
                 
                 // 2. RELAY LOGIC: If I am the Host, forward this to everyone else
-                if (this.isHost) {
+                if (this.isHostMode) {
                     this.connections.forEach(otherConn => {
                         // Don't send it back to the person who sent it
                         if (otherConn.peer !== conn.peer && otherConn.open) {
@@ -117,6 +120,14 @@ class P2PService {
                 }
                 break;
         }
+    }
+
+    private emitConnections() {
+        this.callbacks.onConnectionsChanged(this.connections.map(c => c.peer));
+    }
+
+    getActiveConnections() {
+        return this.connections.map(c => c.peer);
     }
 
     async sendFriendRequest(targetId: string) {
@@ -146,7 +157,7 @@ class P2PService {
     // Guest connects to Host
     connectToRoom(hostId: string) {
         this.disconnect(); // Close existing
-        this.isHost = false; // We are joining, so we are a guest
+        this.isHostMode = false; // We are joining, so we are a guest
         const conn = this.peer.connect(hostId);
         this.setupConnection(conn);
     }
@@ -160,10 +171,31 @@ class P2PService {
         });
     }
 
+    // Close specific connection (kick or leave)
+    disconnectPeer(peerId: string) {
+        const conn = this.connections.find(c => c.peer === peerId);
+        if (conn) {
+            conn.close();
+            this.connections = this.connections.filter(c => c.peer !== peerId);
+            this.emitConnections();
+        }
+    }
+
     disconnect() {
         this.connections.forEach(c => c.close());
         this.connections = [];
-        this.isHost = false;
+        this.isHostMode = false;
+        this.emitConnections();
+    }
+    
+    // Fully reset for logout
+    destroy() {
+        this.disconnect();
+        if (this.peer) {
+            this.peer.destroy();
+            this.peer = null;
+        }
+        this._user = null;
     }
 }
 
