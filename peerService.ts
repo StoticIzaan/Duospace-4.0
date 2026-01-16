@@ -1,3 +1,4 @@
+
 import { Peer, DataConnection } from 'peerjs';
 import { User } from './types';
 
@@ -20,11 +21,18 @@ class P2PService {
         const cleanName = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
         if (cleanName.length < 2) throw new Error("Name too short");
         
+        // Fixed: Included missing required properties 'showLastSeen' and 'readReceipts' to match the User interface from types.ts
         const user: User = {
             id: cleanName,
             username: username.trim(),
             avatarColor: 'violet',
-            settings: { theme: 'violet', darkMode: true, aiTone: 'playful' }
+            settings: { 
+                theme: 'violet', 
+                darkMode: true, 
+                aiTone: 'playful',
+                showLastSeen: true,
+                readReceipts: true
+            }
         };
 
         this._user = user;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
-    <title>DuoSpace P2P</title>
+    <title>DuoSpace | Dimension Bridge</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -13,8 +13,13 @@
         --theme-primary: #7c3aed;
         --theme-primary-soft: #f5f3ff;
         --theme-gradient: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
-        --theme-shadow: rgba(124, 58, 237, 0.2);
       }
+
+      .theme-violet { --theme-primary: #7c3aed; --theme-primary-soft: #f5f3ff; --theme-gradient: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); }
+      .theme-rose { --theme-primary: #f43f5e; --theme-primary-soft: #fff1f2; --theme-gradient: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%); }
+      .theme-emerald { --theme-primary: #10b981; --theme-primary-soft: #ecfdf5; --theme-gradient: linear-gradient(135deg, #10b981 0%, #34d399 100%); }
+      .theme-sky { --theme-primary: #0ea5e9; --theme-primary-soft: #f0f9ff; --theme-gradient: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%); }
+      .theme-amber { --theme-primary: #f59e0b; --theme-primary-soft: #fffbeb; --theme-gradient: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); }
 
       body {
         font-family: 'Plus Jakarta Sans', sans-serif;
@@ -25,52 +30,31 @@
 
       .bg-vibe { background: var(--theme-gradient); }
       .text-vibe-primary { color: var(--theme-primary); }
-      .shadow-vibe { box-shadow: 0 15px 35px -5px var(--theme-shadow); }
+      .bg-vibe-soft { background-color: var(--theme-primary-soft); }
       
       .glass {
-        background: rgba(255, 255, 255, 0.9);
-        backdrop-filter: blur(24px) saturate(180%);
-        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(40px) saturate(200%);
+        -webkit-backdrop-filter: blur(40px) saturate(200%);
       }
       .dark .glass {
-        background: rgba(15, 23, 42, 0.95);
+        background: rgba(15, 23, 42, 0.9);
       }
       
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
       @keyframes message-pop {
-        0% { transform: scale(0.9) translateY(10px); opacity: 0; }
-        100% { transform: scale(1) translateY(0); opacity: 1; }
+        0% { transform: scale(0.9) translateY(40px); opacity: 0; filter: blur(10px); }
+        100% { transform: scale(1) translateY(0); opacity: 1; filter: blur(0); }
       }
-      .animate-message-pop { animation: message-pop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-
-      @keyframes gravity-drop {
-        0% { transform: translateY(-500px); opacity: 0; }
-        60% { transform: translateY(0); opacity: 1; }
-        75% { transform: translateY(-30px); }
-        90% { transform: translateY(10px); }
-        100% { transform: translateY(0); }
-      }
-      .animate-gravity-drop { animation: gravity-drop 0.7s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
-
-      @keyframes dot-jump {
-        0%, 80%, 100% { transform: translateY(0); }
-        40% { transform: translateY(-8px); }
-      }
-      .dot-jump { animation: dot-jump 1.2s infinite ease-in-out; }
-
-      @keyframes pulse-emerald {
-        0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
-        50% { transform: scale(1.1); opacity: 0.8; box-shadow: 0 0 12px 4px rgba(16, 185, 129, 0.3); }
-      }
-      .animate-pulse-emerald { animation: pulse-emerald 2s infinite ease-in-out; }
+      .animate-message-pop { animation: message-pop 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards; }
 
       @keyframes slide-up-fade {
-        0% { transform: translateY(20px); opacity: 0; }
+        0% { transform: translateY(50px); opacity: 0; }
         100% { transform: translateY(0); opacity: 1; }
       }
-      .animate-slide-up { animation: slide-up-fade 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+      .animate-slide-up { animation: slide-up-fade 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
 
       .mesh-gradient {
         background-color: #f8fafc;
@@ -81,8 +65,8 @@
       .dark .mesh-gradient {
         background-color: #020617;
         background-image: 
-          radial-gradient(at 100% 0%, hsla(253,100%,10%,1) 0px, transparent 50%),
-          radial-gradient(at 0% 100%, hsla(225,100%,5%,1) 0px, transparent 50%);
+          radial-gradient(at 100% 0%, hsla(253,100%,8%,1) 0px, transparent 50%),
+          radial-gradient(at 0% 100%, hsla(225,100%,4%,1) 0px, transparent 50%);
       }
     </style>
     <script>
@@ -91,7 +75,7 @@
         theme: {
           extend: {
             colors: { vibe: { primary: 'var(--theme-primary)', soft: 'var(--theme-primary-soft)' } },
-            borderRadius: { '4xl': '2rem', '5xl': '3.5rem' }
+            borderRadius: { '4xl': '2rem', '5xl': '4rem', '6xl': '5.5rem' }
           }
         }
       }
@@ -106,7 +90,7 @@
     "react-dom/": "https://esm.sh/react-dom@18.2.0/",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
     "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react",
-    "peerjs": "https://esm.sh/peerjs@1.5.4",
+    "peerjs": "https://esm.sh/peerjs@^1.5.5",
     "vite": "https://esm.sh/vite@^7.3.1",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
