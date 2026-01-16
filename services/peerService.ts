@@ -13,7 +13,10 @@ class P2PService {
   isOnline: boolean = false;
 
   initialize(username: string, onReady: () => void) {
-    if (this.peer) return;
+    if (this.peer) {
+        if (this.isOnline) onReady();
+        return;
+    }
     this.username = username;
     const sanitized = username.toLowerCase().replace(/[^a-z0-9]/g, '');
     this.peerId = `duospace-v11-${sanitized}`;

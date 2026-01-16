@@ -18,7 +18,7 @@ import { Button, Input, Card, Badge } from './components/Common';
 // --- Invite Modal ---
 const InviteModal = ({ request, onAccept, onDecline }: { request: any, onAccept: () => void, onDecline: () => void }) => {
   return (
-    <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
+    <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
       <Card className="w-full max-w-sm !p-8 bg-white dark:bg-slate-900 border-none shadow-5xl text-center space-y-6">
          <div className="w-20 h-20 bg-vibe mx-auto rounded-full flex items-center justify-center animate-bounce">
             <Signal size={32} className="text-white" />
@@ -137,18 +137,17 @@ const Dashboard = ({ user }: { user: User }) => {
   const [newSpaceName, setNewSpaceName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [view, setView] = useState<'mine' | 'discover'>('mine');
-  const [isOnline, setIsOnline] = useState(false);
-  const [incomingRequest, setIncomingRequest] = useState<P2PPayload | null>(null);
+  const [isOnline, setIsOnline] = useState(p2p.isOnline);
   const navigate = useNavigate();
 
+  // Dashboard now assumes P2P is init by MainLayout. 
+  // We can just listen for connection acceptance.
   useEffect(() => {
-    p2p.initialize(user.username, () => setIsOnline(true));
+    // If P2P wasn't ready when we mounted, we might miss the flag, but p2p object is singleton.
+    const interval = setInterval(() => setIsOnline(p2p.isOnline), 1000);
 
     const unsubscribe = p2p.subscribe((payload: P2PPayload) => {
-        if (payload.type === 'JOIN_REQUEST') {
-            setIncomingRequest(payload);
-        }
-        else if (payload.type === 'ACCEPT_JOIN') {
+        if (payload.type === 'ACCEPT_JOIN') {
             API.saveSpace(payload.data);
             setSpaces(API.getMySpaces(user.id));
             alert(`Connected to ${payload.fromUsername}!`);
@@ -156,7 +155,7 @@ const Dashboard = ({ user }: { user: User }) => {
         }
     });
 
-    return () => unsubscribe();
+    return () => { unsubscribe(); clearInterval(interval); };
   }, [user.id]);
 
   useEffect(() => {
@@ -180,29 +179,8 @@ const Dashboard = ({ user }: { user: User }) => {
       alert(`Signal sent to ${searchQuery}. They must accept the popup.`);
   };
 
-  const acceptInvite = () => {
-     if (!incomingRequest) return;
-     const payload = incomingRequest;
-     let space = spaces.find(s => s.ownerId === user.id);
-     if (!space) space = API.createSpace(user, `${user.username} & ${payload.fromUsername}`);
-     
-     const updatedSpace = { ...space, members: [...space.members, payload.data.user] };
-     API.saveSpace(updatedSpace);
-     
-     p2p.sendTo(payload.fromUsername, {
-        type: 'ACCEPT_JOIN',
-        data: updatedSpace,
-        fromUsername: user.username
-     });
-     
-     setSpaces(API.getMySpaces(user.id));
-     setIncomingRequest(null);
-  };
-
   return (
     <div className="max-w-md mx-auto h-full flex flex-col p-8 justify-between bg-slate-50 dark:bg-slate-950 overflow-hidden transition-colors duration-500">
-      {incomingRequest && <InviteModal request={incomingRequest} onAccept={acceptInvite} onDecline={() => setIncomingRequest(null)} />}
-      
       <header className="flex justify-between items-center py-6">
         <div className="flex flex-col">
           <h2 className="text-4xl font-black dark:text-white tracking-tighter">Worlds</h2>
@@ -433,8 +411,6 @@ const Space = ({ user: currentUser }: { user: User }) => {
             data: { spaceId: space.id, message: aiMsg },
             fromUsername: 'Duo AI'
           });
-      } else {
-          // AI disabled in settings
       }
     }
   };
@@ -488,7 +464,7 @@ const Space = ({ user: currentUser }: { user: User }) => {
   const updateSetting = (key: keyof User['settings'], val: any) => {
       const newSettings = { ...currentUser.settings, [key]: val };
       API.saveSession({ user: { ...currentUser, settings: newSettings } });
-      window.location.reload(); // Simple reload to apply all effects cleanly
+      window.location.reload(); 
   };
 
   if (!space) return null;
@@ -669,6 +645,57 @@ const NavBtn = ({ active, onClick, icon, label }: any) => (
   </button>
 );
 
+// --- Main Layout for Persistent P2P Logic ---
+const MainLayout = ({ user }: { user: User }) => {
+    const navigate = useNavigate();
+    const [incomingRequest, setIncomingRequest] = useState<P2PPayload | null>(null);
+
+    useEffect(() => {
+        p2p.initialize(user.username, () => {});
+
+        const unsubscribe = p2p.subscribe((payload) => {
+            if (payload.type === 'JOIN_REQUEST') {
+                setIncomingRequest(payload);
+            }
+        });
+        return unsubscribe;
+    }, [user.username]);
+
+    const acceptInvite = () => {
+         if (!incomingRequest) return;
+         const payload = incomingRequest;
+         
+         const currentSpaces = API.getMySpaces(user.id);
+         let targetSpace = currentSpaces.find(s => s.members.some(m => m.username === payload.fromUsername));
+         if (!targetSpace) targetSpace = currentSpaces.find(s => s.ownerId === user.id);
+         if (!targetSpace) targetSpace = API.createSpace(user, `${user.username} & ${payload.fromUsername}`);
+
+         if (!targetSpace.members.some(m => m.id === payload.data.user.id)) {
+             targetSpace.members.push(payload.data.user);
+             API.saveSpace(targetSpace);
+         }
+
+         p2p.sendTo(payload.fromUsername, {
+            type: 'ACCEPT_JOIN',
+            data: targetSpace,
+            fromUsername: user.username
+         });
+
+         setIncomingRequest(null);
+         navigate(`/space/${targetSpace.id}`);
+    };
+
+    return (
+        <>
+            {incomingRequest && <InviteModal request={incomingRequest} onAccept={acceptInvite} onDecline={() => setIncomingRequest(null)} />}
+            <Routes>
+                <Route path="/" element={<Dashboard user={user} />} />
+                <Route path="/space/:spaceId" element={<Space user={user} />} />
+            </Routes>
+        </>
+    );
+};
+
 const App = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -676,10 +703,7 @@ const App = () => {
   if (loading) return null;
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/" element={user ? <Dashboard user={user} /> : <Auth onLogin={setUser} />} />
-        <Route path="/space/:spaceId" element={user ? <Space user={user} /> : <Auth onLogin={setUser} />} />
-      </Routes>
+        {!user ? <Auth onLogin={setUser} /> : <MainLayout user={user} />}
     </HashRouter>
   );
 };
