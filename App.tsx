@@ -60,7 +60,7 @@ const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
     try {
         const user = await p2p.register(username);
         onLogin(user);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(err.message || "Connection failed"); }
   };
 
   return (
@@ -188,7 +188,7 @@ const Dashboard = ({ user, setView }: { user: User, setView: (v: 'dashboard' | '
                                     <UserIcon size={18}/>
                                 </div>
                                 <div>
-                                    <h4 className="text-sm font-black dark:text-white">{req.user.username}</h4>
+                                    <h4 className="text-sm font-black dark:text-white">{req.user?.username || "Peer"}</h4>
                                     <p className="text-[7px] font-black text-vibe-primary uppercase tracking-wider">Connect Request</p>
                                 </div>
                             </div>

@@ -20,7 +20,11 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   return (
-    <button className={`${base} ${variants[variant]} ${className}`} disabled={isLoading || props.disabled} {...domProps}>
+    <button 
+      className={`${base} ${variants[variant]} ${className}`} 
+      disabled={isLoading || props.disabled} 
+      {...domProps}
+    >
       {isLoading && <Loader2 className="w-3 h-3 animate-spin" />}
       {children}
     </button>
@@ -59,7 +63,10 @@ export const Input: React.FC<InputProps> = ({ label, error, icon, onIconClick, c
 export const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '', ...props }) => {
   const { children: _, ...domProps } = props;
   return (
-    <div className={`glass rounded-2xl p-4 md:p-5 shadow-xl shadow-slate-200/30 dark:shadow-black/40 border border-white dark:border-white/5 relative overflow-hidden transition-all duration-500 ${className}`} {...domProps}>
+    <div 
+      className={`glass rounded-2xl p-4 md:p-5 shadow-xl shadow-slate-200/30 dark:shadow-black/40 border border-white dark:border-white/5 relative overflow-hidden transition-all duration-500 ${className}`} 
+      {...domProps}
+    >
       {children}
     </div>
   );
