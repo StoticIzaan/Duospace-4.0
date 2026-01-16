@@ -32,7 +32,8 @@ export const createSpace = (user: User, name: string): DuoSpace => {
     theme: 'violet',
     members: [user],
     requests: [],
-    activeGame: { board: Array(9).fill(null), status: 'waiting' },
+    // Initialize 6x7 board (42 cells) for Connect 4
+    activeGame: { board: Array(42).fill(null), status: 'waiting' },
     messages: []
   };
   db.spaces.push(newSpace);

@@ -11,6 +11,7 @@ export interface User {
     readReceipts: boolean;
     theme: ThemeColor;
     aiInChat: boolean;
+    aiTone: 'playful' | 'serious'; // New setting
   };
 }
 
@@ -37,11 +38,13 @@ export interface Message {
     senderName: string;
     content: string;
   };
+  reactions?: Record<string, string>; // userId -> emoji
 }
 
 export interface GameState {
   board: (string | null)[];
   status: 'waiting' | 'active' | 'won' | 'draw';
+  resetRequestedBy?: string;
 }
 
 export interface DuoSpace {

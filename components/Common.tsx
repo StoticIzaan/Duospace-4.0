@@ -30,15 +30,28 @@ export const Button: React.FC<ButtonProps> = ({
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
+  icon?: React.ReactNode;
+  onIconClick?: () => void;
 }
 
-export const Input: React.FC<InputProps> = ({ label, error, className = '', ...props }) => (
+export const Input: React.FC<InputProps> = ({ label, error, icon, onIconClick, className = '', ...props }) => (
   <div className="flex flex-col gap-2 w-full">
     {label && <label className="px-1 text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</label>}
-    <input 
-      className={`px-5 py-4 rounded-2xl bg-white border border-slate-200 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-4 focus:ring-vibe-soft focus:border-vibe-primary transition-all dark:bg-slate-900 dark:border-slate-800 dark:text-white dark:placeholder:text-slate-700 font-bold ${className}`}
-      {...props} 
-    />
+    <div className="relative">
+        <input 
+        className={`w-full px-5 py-4 rounded-2xl bg-white border border-slate-200 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-4 focus:ring-vibe-soft focus:border-vibe-primary transition-all dark:bg-slate-900 dark:border-slate-800 dark:text-white dark:placeholder:text-slate-700 font-bold ${icon ? 'pr-12' : ''} ${className}`}
+        {...props} 
+        />
+        {icon && (
+            <button 
+                type="button"
+                onClick={onIconClick}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-vibe-primary transition-colors"
+            >
+                {icon}
+            </button>
+        )}
+    </div>
     {error && <span className="px-1 text-xs font-bold text-rose-500">{error}</span>}
   </div>
 );

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { 
@@ -7,63 +6,35 @@ import {
   Trash2, X, Mic, Image as ImageIcon, CheckCheck, 
   Palette, StopCircle, Volume2, Camera, FileUp, 
   Pause, Check, Reply, Settings, Pencil, Eraser,
-  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal, Clock, Eye, EyeOff, Brain, CornerUpLeft, RefreshCw, Cloud, AlertTriangle, Database
+  Globe, Copy, Info, Zap, Share2, Moon, Sun, Paperclip, Search, Bell, Loader2, Signal, Clock, Eye, EyeOff, Brain, CornerUpLeft, RefreshCw, Cloud, AlertTriangle, Database, Mail, Smile, MoreHorizontal
 } from 'lucide-react';
 import * as API from './services/storage';
 import * as AI from './services/geminiService';
-import { cloud } from './services/peerService'; // Now exports cloud service
-import { User, DuoSpace, Message, ThemeColor, JoinRequest, P2PPayload } from './types';
+import { cloud } from './services/peerService'; 
+import { User, DuoSpace, Message, ThemeColor, JoinRequest, P2PPayload, GameState } from './types';
 import { Button, Input, Card, Badge } from './components/Common';
 
-// --- Invite Modal ---
-const InviteModal = ({ request, onAccept, onDecline }: { request: any, onAccept: () => void, onDecline: () => void }) => {
-  return (
-    <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
-      <Card className="w-full max-w-sm !p-8 bg-white dark:bg-slate-900 border-none shadow-5xl text-center space-y-6">
-         <div className="w-20 h-20 bg-vibe mx-auto rounded-full flex items-center justify-center animate-bounce">
-            <Signal size={32} className="text-white" />
-         </div>
-         <div>
-            <h3 className="text-2xl font-black dark:text-white">Incoming Link</h3>
-            <p className="text-slate-500 font-bold mt-2">"{request.fromUsername}" wants to connect dimensions.</p>
-         </div>
-         <div className="flex gap-3">
-            <Button onClick={onDecline} variant="secondary" className="flex-1">Ignore</Button>
-            <Button onClick={onAccept} className="flex-1">Accept</Button>
-         </div>
-      </Card>
-    </div>
-  );
-};
-
-// --- Connection Config Modal ---
 const ConfigModal = ({ onClose }: { onClose: () => void }) => {
     const [url, setUrl] = useState(cloud.dbUrl || '');
-    
     const save = () => {
         if (!url.trim()) return;
         localStorage.setItem('duospace_custom_db_url', url.trim());
         window.location.reload();
     };
-
     const reset = () => {
         localStorage.removeItem('duospace_custom_db_url');
         window.location.reload();
     };
-
     return (
         <div className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in zoom-in duration-300">
-            <Card className="w-full max-w-md !p-8 bg-white dark:bg-slate-900 border-none shadow-5xl space-y-6">
+            <Card className="w-full max-w-md !p-8 bg-white dark:bg-slate-900 border-none shadow-5xl space-y-6 text-slate-900 dark:text-white">
                  <div className="flex items-center gap-4 text-rose-500">
                     <Database size={32} />
-                    <h3 className="text-2xl font-black dark:text-white">Database Link</h3>
+                    <h3 className="text-2xl font-black">Database Connection</h3>
                  </div>
-                 <p className="text-sm text-slate-500 font-medium">
-                    We can't connect to the default cloud database. Please copy the <strong>Realtime Database URL</strong> from your Firebase Console and paste it below.
+                 <p className="text-sm font-medium opacity-70">
+                    Connection failed. Ensure your Realtime Database URL is configured correctly.
                  </p>
-                 <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-[10px] font-mono break-all text-slate-500">
-                    Format: https://your-project.firebaseio.com
-                 </div>
                  <Input 
                     value={url} 
                     onChange={e => setUrl(e.target.value)} 
@@ -73,20 +44,18 @@ const ConfigModal = ({ onClose }: { onClose: () => void }) => {
                  <div className="flex gap-3 pt-2">
                     <Button variant="ghost" onClick={reset}>Reset</Button>
                     <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                    <Button onClick={save}>Save & Restart</Button>
+                    <Button onClick={save}>Save & Sync</Button>
                  </div>
             </Card>
         </div>
     );
 }
 
-// --- Sub-component: Sketchpad ---
 const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, onCancel: () => void }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [color, setColor] = useState('#7c3aed');
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -99,13 +68,7 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
       ctxRef.current = ctx;
     }
   }, []);
-
-  useEffect(() => {
-      if (ctxRef.current) {
-          ctxRef.current.strokeStyle = color;
-      }
-  }, [color]);
-
+  useEffect(() => { if (ctxRef.current) ctxRef.current.strokeStyle = color; }, [color]);
   const getPos = (e: any) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
@@ -113,9 +76,7 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
-
   const colors = ['#000000', '#ffffff', '#7c3aed', '#f43f5e', '#ef4444', '#0ea5e9', '#10b981', '#f59e0b'];
-
   return (
     <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in zoom-in">
       <Card className="w-full max-w-lg h-[80vh] flex flex-col !p-0 overflow-hidden bg-white dark:bg-slate-900 border-none shadow-5xl">
@@ -132,15 +93,9 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
             onTouchMove={(e) => { if (isDrawing) { const p = getPos(e); ctxRef.current?.lineTo(p.x, p.y); ctxRef.current?.stroke(); } }}
             onTouchEnd={() => { setIsDrawing(false); ctxRef.current?.closePath(); }}
             className="w-full h-full" />
-            
              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 p-2 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-full shadow-lg">
                 {colors.map(c => (
-                    <button 
-                        key={c} 
-                        onClick={() => setColor(c)} 
-                        className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'}`}
-                        style={{ backgroundColor: c }}
-                    />
+                    <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
                 ))}
             </div>
         </div>
@@ -153,150 +108,121 @@ const Sketchpad = ({ onSave, onCancel }: { onSave: (dataUrl: string) => void, on
   );
 };
 
-// --- View: Auth ---
 const Auth = ({ onLogin }: { onLogin: (user: User) => void }) => {
-  const [name, setName] = useState('');
+  const [isRegister, setIsRegister] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const handleAuth = () => {
-    if (!name.trim()) return;
-    setLoading(true);
-    setTimeout(() => {
-      const user: User = {
-        id: Math.random().toString(36).substring(2, 11),
-        username: name.trim(),
-        avatarColor: 'violet',
-        settings: { darkMode: true, showLastSeen: true, readReceipts: true, theme: 'violet', aiInChat: true }
-      };
-      API.saveSession({ user });
-      onLogin(user);
-      setLoading(false);
-    }, 1200);
+  const [error, setError] = useState('');
+  const handleSubmit = async () => {
+    if (!username.trim() || !password.trim()) { setError("All fields required"); return; }
+    setError(''); setLoading(true);
+    try {
+        const user = isRegister ? await cloud.register(username, password) : await cloud.login(username, password);
+        API.saveSession({ user });
+        onLogin(user);
+    } catch (err: any) { setError(err.message || "Auth failed"); } finally { setLoading(false); }
   };
-
   return (
-    <div className="h-full flex flex-col items-center justify-center p-10 space-y-16 bg-slate-50 dark:bg-slate-950">
-      <div className="text-center space-y-8 animate-in slide-in-from-top-10 duration-1000">
-        <div className="w-28 h-28 bg-vibe mx-auto rounded-[2.5rem] flex items-center justify-center text-white shadow-5xl rotate-6 hover:rotate-0 transition-transform duration-500">
-          <Heart size={56} fill="currentColor" />
+    <div className="h-full flex flex-col items-center justify-center p-10 space-y-10 bg-slate-50 dark:bg-slate-950">
+      <div className="text-center space-y-4 animate-in slide-in-from-top-10 duration-1000">
+        <div className="w-24 h-24 bg-vibe mx-auto rounded-[2rem] flex items-center justify-center text-white shadow-5xl rotate-3 hover:rotate-0 transition-transform duration-500">
+          <Heart size={48} fill="currentColor" />
         </div>
         <div>
-          <h1 className="text-6xl font-black dark:text-white tracking-tight mb-2">DuoSpace</h1>
-          <p className="text-xs font-black uppercase text-vibe-primary tracking-[0.4em] opacity-80">Cloud Sync Active</p>
+          {/* VISIBILITY FIX: Switched to bg-clip-text gradient for max visibility on white backgrounds */}
+          <h1 className="text-6xl font-black bg-clip-text text-transparent bg-vibe tracking-tighter mb-2 drop-shadow-sm">DuoSpace</h1>
+          <p className="text-[10px] font-black uppercase text-vibe-primary tracking-[0.5em] opacity-60 text-center">
+              {isRegister ? 'Begin Your Story' : 'Private Dimension'}
+          </p>
         </div>
       </div>
-      <Card className="w-full max-w-sm !p-10 space-y-8 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[3.5rem]">
-        <Input label="Your Identity" value={name} onChange={e => setName(e.target.value)} placeholder="Type your username..." onKeyDown={e => e.key === 'Enter' && handleAuth()} />
-        <Button onClick={handleAuth} isLoading={loading} className="w-full py-5 rounded-3xl">Initialize Uplink</Button>
+      <Card className="w-full max-w-sm !p-10 space-y-8 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[3rem]">
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+            <button onClick={() => { setIsRegister(false); setError(''); }} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${!isRegister ? 'bg-white dark:bg-slate-700 text-vibe-primary shadow-sm' : 'text-slate-400'}`}>Sign In</button>
+            <button onClick={() => { setIsRegister(true); setError(''); }} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${isRegister ? 'bg-white dark:bg-slate-700 text-vibe-primary shadow-sm' : 'text-slate-400'}`}>Sign Up</button>
+        </div>
+        <div className="space-y-4">
+            <Input label="Username" value={username} onChange={e => setUsername(e.target.value)} placeholder="Unique Name" />
+            <Input label="Password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Secret Key" icon={showPassword ? <EyeOff size={20}/> : <Eye size={20}/>} onIconClick={() => setShowPassword(!showPassword)} />
+        </div>
+        {error && <p className="text-xs font-bold text-rose-500 text-center animate-pulse">{error}</p>}
+        <Button onClick={handleSubmit} isLoading={loading} className="w-full py-5 rounded-3xl font-black uppercase tracking-widest text-[11px]">{isRegister ? 'Create World' : 'Enter Dimension'}</Button>
       </Card>
     </div>
   );
 };
 
-// --- View: Dashboard ---
 const Dashboard = ({ user }: { user: User }) => {
   const [spaces, setSpaces] = useState<DuoSpace[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchStatus, setSearchStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+  const [searchResult, setSearchResult] = useState<{id: string, username: string} | null>(null);
+  const [inviteSent, setInviteSent] = useState(false);
   const [newSpaceName, setNewSpaceName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [view, setView] = useState<'mine' | 'discover'>('mine');
+  const [view, setView] = useState<'mine' | 'inbox' | 'discover'>('mine');
+  const [invites, setInvites] = useState<any[]>([]);
   const [isOnline, setIsOnline] = useState(cloud.isOnline);
   const [connectionWarning, setConnectionWarning] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const navigate = useNavigate();
-
   useEffect(() => {
-    const fetch = () => setSpaces(API.getMySpaces(user.id));
-    fetch(); 
-    const interval = setInterval(() => {
-        fetch();
-        setIsOnline(cloud.isOnline);
-    }, 2000); 
-
-    // Watch for connection issues
-    const connectionTimer = setTimeout(() => {
-        if (!cloud.isOnline) {
-            setConnectionWarning(true);
-        }
-    }, 10000);
-
-    return () => {
-        clearInterval(interval);
-        clearTimeout(connectionTimer);
-    };
+    setSpaces(API.getMySpaces(user.id));
+    const interval = setInterval(() => setIsOnline(cloud.isOnline), 2000);
+    const connTimer = setTimeout(() => { if (!cloud.isOnline) setConnectionWarning(true); }, 10000);
+    const unsubInvites = cloud.subscribeToInvites(user.id, (list) => setInvites(list));
+    return () => { clearInterval(interval); clearTimeout(connTimer); unsubInvites(); };
   }, [user.id]);
-
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
-    setSearchStatus('searching');
-    const targetUserId = await cloud.findUser(searchQuery);
-    
-    if (targetUserId) {
-        setSearchStatus('found');
-        // Auto send invite logic
-        const payload = {
-            type: 'JOIN_REQUEST',
-            data: { user },
-            fromUsername: user.username
-        };
-        cloud.sendInvite(targetUserId, payload);
-    } else {
-        setSearchStatus('not_found');
-    }
+    setSearchStatus('searching'); setInviteSent(false);
+    const result = await cloud.findUser(searchQuery);
+    if (result && result.id !== user.id) { setSearchStatus('found'); setSearchResult(result); }
+    else { setSearchStatus('not_found'); setSearchResult(null); }
   };
-
-  const handleCreateSpace = () => {
-      const s = API.createSpace(user, newSpaceName);
-      cloud.syncSpace(s); // Upload to cloud
-      navigate(`/space/${s.id}`);
+  const sendInvite = async () => {
+      if (!searchResult) return;
+      await cloud.sendInvite(searchResult.id, { type: 'JOIN_REQUEST', data: { user }, fromUsername: user.username, timestamp: Date.now() });
+      setInviteSent(true);
   };
-
+  const handleCreateSpace = () => { const s = API.createSpace(user, newSpaceName); cloud.syncSpace(s); navigate(`/space/${s.id}`); };
+  const acceptInvite = (invite: any) => {
+       const payload = invite;
+       const currentSpaces = API.getMySpaces(user.id);
+       let targetSpace = currentSpaces.find(s => s.members.some(m => m.username === payload.fromUsername)) || currentSpaces.find(s => s.ownerId === user.id);
+       if (!targetSpace) targetSpace = API.createSpace(user, `${user.username} & ${payload.fromUsername}`);
+       if (!targetSpace.members.some(m => m.id === payload.data.user.id)) targetSpace.members.push(payload.data.user);
+       cloud.syncSpace(targetSpace); cloud.deleteInvite(user.id, invite.inviteId); navigate(`/space/${targetSpace.id}`);
+  };
   return (
     <div className="max-w-md mx-auto h-full flex flex-col p-8 justify-between bg-slate-50 dark:bg-slate-950 overflow-hidden transition-colors duration-500">
       {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}
-      
       <header className="flex justify-between items-center py-6">
         <div className="flex flex-col">
           <h2 className="text-4xl font-black dark:text-white tracking-tighter">Worlds</h2>
           <div className="flex items-center gap-2 mt-1 cursor-pointer" onClick={() => connectionWarning && setShowConfig(true)}>
-             <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${isOnline ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : connectionWarning ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'}`}></div>
-             <Badge color={isOnline ? "bg-vibe-soft text-vibe-primary" : connectionWarning ? "bg-rose-100 text-rose-500 hover:bg-rose-200" : "bg-amber-100 text-amber-500"}>
-                {isOnline ? 'Cloud Active' : connectionWarning ? 'Connection Failed (Tap to Fix)' : 'Connecting...'}
+             <div className={`w-2 h-2 rounded-full transition-colors ${isOnline ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : connectionWarning ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'}`}></div>
+             <Badge color={isOnline ? "bg-vibe-soft text-vibe-primary" : connectionWarning ? "bg-rose-100 text-rose-500" : "bg-amber-100 text-amber-500"}>
+                {isOnline ? `Online as ${user.username}` : connectionWarning ? 'Config Error' : 'Connecting...'}
              </Badge>
           </div>
         </div>
-        <button onClick={() => { API.clearSession(); window.location.reload(); }} className="p-3 bg-white dark:bg-slate-900 rounded-2xl shadow-sm text-slate-400 border border-slate-100 dark:border-slate-800"><LogOut size={24} /></button>
+        <button onClick={() => { API.clearSession(); window.location.reload(); }} className="p-3 bg-white dark:bg-slate-900 rounded-2xl shadow-sm text-slate-400"><LogOut size={24} /></button>
       </header>
-
-      {connectionWarning && !isOnline && (
-        <div className="mb-4 animate-in slide-in-from-top-4" onClick={() => setShowConfig(true)}>
-            <Card className="!p-4 bg-rose-50 border-rose-200 dark:bg-rose-900/20 dark:border-rose-800 cursor-pointer hover:opacity-80 transition-opacity">
-                <div className="flex gap-3">
-                    <AlertTriangle className="text-rose-500 shrink-0" size={20} />
-                    <div className="space-y-1">
-                        <p className="text-xs font-bold text-rose-600 dark:text-rose-300">Cannot Connect to Database</p>
-                        <p className="text-[10px] text-rose-500 dark:text-rose-400 font-mono break-all leading-tight">Current: {cloud.dbUrl}</p>
-                        <p className="text-[10px] text-rose-500 dark:text-rose-400 mt-1 font-bold">Tap here to configure URL manually.</p>
-                    </div>
-                </div>
-            </Card>
-        </div>
-      )}
-
-      <nav className="flex gap-4 mb-8">
-        <button onClick={() => setView('mine')} className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${view === 'mine' ? 'bg-vibe text-white shadow-xl shadow-vibe/20' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>My Spaces</button>
-        <button onClick={() => setView('discover')} className={`flex-1 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${view === 'discover' ? 'bg-vibe text-white shadow-xl shadow-vibe/20' : 'bg-white dark:bg-slate-900 text-slate-400'}`}>Connect</button>
+      <nav className="flex gap-2 mb-8 bg-white dark:bg-slate-900 p-2 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800">
+        <button onClick={() => setView('mine')} className={`flex-1 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${view === 'mine' ? 'bg-vibe text-white shadow-lg' : 'text-slate-400'}`}>Home</button>
+        <button onClick={() => setView('inbox')} className={`flex-1 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all relative ${view === 'inbox' ? 'bg-vibe text-white shadow-lg' : 'text-slate-400'}`}>
+            Inbox {invites.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>}
+        </button>
+        <button onClick={() => setView('discover')} className={`flex-1 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${view === 'discover' ? 'bg-vibe text-white shadow-lg' : 'text-slate-400'}`}>Connect</button>
       </nav>
-
       <div className="flex-1 flex flex-col space-y-6 overflow-y-auto no-scrollbar pb-10">
-        {view === 'mine' ? (
+        {view === 'mine' && (
           <div className="space-y-4">
             <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Active Links</p>
-            {spaces.length === 0 ? (
-              <div className="text-center opacity-30 py-20"><Users size={64} className="mx-auto mb-4" /><p className="font-black uppercase tracking-widest text-[10px]">No spaces yet</p></div>
-            ) : (
-              spaces.map(s => (
+            {spaces.length === 0 ? <div className="text-center opacity-30 py-20"><Users size={64} className="mx-auto mb-4" /><p className="font-black uppercase tracking-widest text-[10px]">No spaces yet</p></div> : spaces.map(s => (
                 <Card key={s.id} className="cursor-pointer !p-8 border-none bg-white dark:bg-slate-900 shadow-2xl hover:scale-[1.02] active:scale-95 transition-all" onClick={() => navigate(`/space/${s.id}`)}>
                   <div className="flex justify-between items-center">
                     <div className="space-y-1">
@@ -306,74 +232,57 @@ const Dashboard = ({ user }: { user: User }) => {
                     <div className="w-12 h-12 bg-vibe text-white rounded-2xl flex items-center justify-center shadow-vibe"><Play size={24} fill="currentColor" /></div>
                   </div>
                 </Card>
-              ))
-            )}
+            ))}
           </div>
-        ) : (
+        )}
+        {view === 'inbox' && (
+            <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Requests</p>
+                {invites.length === 0 ? <div className="text-center opacity-30 py-20"><Mail size={64} className="mx-auto mb-4" /><p className="font-black uppercase tracking-widest text-[10px]">Empty Inbox</p></div> : invites.map(invite => (
+                    <Card key={invite.inviteId} className="!p-6 bg-white dark:bg-slate-900 shadow-xl border-l-4 border-vibe-primary animate-in slide-in-from-right-4">
+                        <div className="flex justify-between items-start mb-4">
+                            <div><h4 className="text-xl font-black dark:text-white">{invite.fromUsername}</h4><p className="text-xs text-slate-400 font-medium">Invitation</p></div>
+                        </div>
+                        <div className="flex gap-3"><Button onClick={() => cloud.deleteInvite(user.id, invite.inviteId)} variant="secondary" className="flex-1 py-3 text-xs">Decline</Button><Button onClick={() => acceptInvite(invite)} className="flex-1 py-3 text-xs">Accept</Button></div>
+                    </Card>
+                ))}
+            </div>
+        )}
+        {view === 'discover' && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-3xl mb-4 border border-indigo-100 dark:border-indigo-800">
-                <div className="flex items-start gap-4">
-                    <Cloud className="text-vibe-primary shrink-0" size={24}/>
-                    <div>
-                        <h4 className="font-black text-sm dark:text-white uppercase mb-1">Global User Search</h4>
-                        <p className="text-xs text-slate-500 leading-relaxed">Find anyone by username. <strong>100% Reliable</strong>.</p>
-                    </div>
-                </div>
-            </div>
-
             <div className="flex gap-2">
-              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search Username..." className="flex-1 bg-white dark:bg-slate-900 px-6 py-4 rounded-2xl outline-none font-bold dark:text-white border-2 border-transparent focus:border-vibe-primary transition-all" />
-              <button onClick={handleSearch} disabled={!isOnline} className="p-4 bg-vibe text-white rounded-2xl flex items-center justify-center disabled:opacity-50 disabled:grayscale">{searchStatus === 'searching' ? <Loader2 className="animate-spin" size={24}/> : <Search size={24}/>}</button>
+              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Username..." className="flex-1 bg-white dark:bg-slate-900 px-6 py-4 rounded-2xl outline-none font-bold dark:text-white border-2 border-transparent focus:border-vibe-primary transition-all" />
+              <button onClick={handleSearch} className="p-4 bg-vibe text-white rounded-2xl flex items-center justify-center">{searchStatus === 'searching' ? <Loader2 className="animate-spin" size={24}/> : <Search size={24}/>}</button>
             </div>
-            
-            {searchStatus === 'found' && (
-                <Card className="!p-6 flex justify-between items-center border-l-4 border-emerald-500 shadow-xl bg-white dark:bg-slate-900 animate-in slide-in-from-bottom-2">
-                  <div>
-                    <h4 className="text-xl font-black dark:text-white">{searchQuery}</h4>
-                    <p className="text-[10px] font-black uppercase text-emerald-500">Invite Sent</p>
+            {searchStatus === 'found' && searchResult && (
+                <Card className="!p-6 bg-white dark:bg-slate-900 shadow-xl animate-in slide-in-from-bottom-2">
+                  <div className="flex justify-between items-center">
+                      <div><h4 className="text-xl font-black dark:text-white">{searchResult.username}</h4><p className="text-[10px] font-black uppercase text-emerald-500">Online</p></div>
+                      {inviteSent ? <div className="flex items-center gap-2 text-emerald-500 font-bold bg-emerald-50 px-4 py-2 rounded-xl"><Check size={16} /> Sent</div> : <Button onClick={sendInvite} className="py-2 px-6 text-xs">Invite</Button>}
                   </div>
-                  <CheckCheck size={24} className="text-emerald-500" />
                 </Card>
-            )}
-
-            {searchStatus === 'not_found' && (
-                <div className="text-center py-8 opacity-70 animate-in fade-in zoom-in duration-300">
-                    <h4 className="font-black text-rose-500 text-lg">User Not Found</h4>
-                    <p className="text-xs mt-2 text-slate-500 font-medium">Check the spelling and try again.</p>
-                </div>
             )}
           </div>
         )}
       </div>
-
-      <div className="pt-6">
-        <Card className="!p-8 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[3rem]">
-          {showCreate ? (
-            <div className="space-y-4 animate-in slide-in-from-top-4">
-              <Input label="Dimension Name" value={newSpaceName} onChange={e => setNewSpaceName(e.target.value)} placeholder="Our Place" />
-              <div className="flex gap-2"><Button onClick={() => setShowCreate(false)} variant="secondary" className="flex-1">Back</Button><Button onClick={handleCreateSpace} className="flex-1">Create</Button></div>
-            </div>
-          ) : (
-            <Button onClick={() => setShowCreate(true)} className="w-full py-5 rounded-3xl"><Plus size={24} /> New Space</Button>
-          )}
-        </Card>
-      </div>
+      {view === 'mine' && (
+        <div className="pt-6">
+            <Card className="!p-8 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[3rem]">
+                {showCreate ? <div className="space-y-4"><Input label="World Name" value={newSpaceName} onChange={e => setNewSpaceName(e.target.value)} placeholder="Our Place" /><div className="flex gap-2"><Button onClick={() => setShowCreate(false)} variant="secondary" className="flex-1">Back</Button><Button onClick={handleCreateSpace} className="flex-1">Create</Button></div></div> : <Button onClick={() => setShowCreate(true)} className="w-full py-5 rounded-3xl font-black text-[11px] uppercase tracking-widest"><Plus size={24} /> New Space</Button>}
+            </Card>
+        </div>
+      )}
     </div>
   );
 };
 
-// --- Nav Button Component ---
 const NavBtn = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
-  <button onClick={onClick} className={`flex flex-col items-center justify-center gap-1 transition-all duration-300 w-20 ${active ? 'text-vibe -translate-y-2' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-    <div className={`p-3 rounded-2xl transition-all ${active ? 'bg-vibe/10 shadow-lg shadow-vibe/20' : 'bg-transparent'}`}>
-        {/* Fix: cast icon to React.ReactElement<any> to allow specific props like size */}
-        {React.cloneElement(icon as React.ReactElement<any>, { size: 26, fill: active ? "currentColor" : "none" })}
-    </div>
-    <span className={`text-[9px] font-black uppercase tracking-widest transition-all ${active ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>{label}</span>
+  <button onClick={onClick} className={`flex flex-col items-center justify-center gap-1 transition-all duration-300 w-20 ${active ? 'text-vibe -translate-y-2' : 'text-slate-400'}`}>
+    <div className={`p-3 rounded-2xl transition-all ${active ? 'bg-vibe/10 shadow-lg' : 'bg-transparent'}`}>{React.cloneElement(icon as React.ReactElement<any>, { size: 26, fill: active ? "currentColor" : "none" })}</div>
+    <span className={`text-[9px] font-black uppercase tracking-widest ${active ? 'opacity-100' : 'opacity-0'}`}>{label}</span>
   </button>
 );
 
-// --- View: Space ---
 const Space = ({ user: currentUser, onUpdateUser }: { user: User, onUpdateUser: (u: User) => void }) => {
   const { spaceId } = useParams();
   const [space, setSpace] = useState<DuoSpace | null>(null);
@@ -384,373 +293,100 @@ const Space = ({ user: currentUser, onUpdateUser }: { user: User, onUpdateUser: 
   const [isRecording, setIsRecording] = useState(false);
   const [voiceDraft, setVoiceDraft] = useState<{ blob: Blob, url: string } | null>(null);
   const [isPlayingDraft, setIsPlayingDraft] = useState(false);
-  const [lastSeen, setLastSeen] = useState<number>(Date.now());
   const [now, setNow] = useState(Date.now());
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const draftAudioRef = useRef<HTMLAudioElement | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check local storage first for instant load
     const localSpace = API.getSpace(spaceId!);
     if (localSpace) setSpace(localSpace);
-
-    // Subscribe to Firebase Live Data
-    const unsubscribe = cloud.subscribeToSpace(spaceId!, (remoteSpace) => {
-        setSpace(remoteSpace);
-        API.saveSpace(remoteSpace); // Backup to local
-        document.documentElement.setAttribute('data-theme', remoteSpace.theme);
-        setLastSeen(Date.now()); // Assuming activity means online
-    });
-    
-    // Update 'now' for relative time display
-    const timeInterval = setInterval(() => setNow(Date.now()), 10000);
-
-    return () => {
-        unsubscribe();
-        clearInterval(timeInterval);
-    };
+    const unsub = cloud.subscribeToSpace(spaceId!, (remoteSpace) => { setSpace(remoteSpace); API.saveSpace(remoteSpace); document.documentElement.setAttribute('data-theme', remoteSpace.theme); });
+    const unsubTyping = cloud.subscribeToTyping(spaceId!, (users) => setTypingUsers(users.filter(u => u !== currentUser.id)));
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => { unsub(); unsubTyping(); clearInterval(interval); };
   }, [spaceId, currentUser.id]);
 
-  useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [space?.messages, aiLoading]);
+  useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [space?.messages, aiLoading, typingUsers]);
 
-  const getTimeAgo = (timestamp: number) => {
-      // Logic: If *I* have last seen disabled, I shouldn't see others (privacy reciprocity)
-      if (!currentUser.settings.showLastSeen) return "Hidden";
-
-      const diff = Math.floor((now - timestamp) / 1000);
-      if (diff < 60) return "Active Now"; 
-      return "Away";
+  const handleTyping = () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      cloud.setTypingStatus(space!.id, currentUser.id, true);
+      typingTimeoutRef.current = setTimeout(() => cloud.setTypingStatus(space!.id, currentUser.id, false), 3000);
   };
 
   const sendMessage = async (type: 'text' | 'image' | 'voice' | 'file', content: string, fileName?: string) => {
     if (!space) return;
-    const msg: Message = { 
-      id: Date.now().toString(), senderId: currentUser.id, senderName: currentUser.username, 
-      content: type === 'text' ? content : `Sent a ${type}`, timestamp: Date.now(), 
-      type, mediaUrl: (type !== 'text' ? content : undefined), fileName, read: false,
-      replyTo: replyingTo ? {
-          id: replyingTo.id,
-          senderName: replyingTo.senderName,
-          content: replyingTo.type === 'text' ? replyingTo.content : `[${replyingTo.type}]`
-      } : undefined
-    };
-    
-    setReplyingTo(null);
-
-    // Optimistic Update
-    const newMsgs = [...(space.messages || []), msg];
-    setSpace({ ...space, messages: newMsgs });
-
-    // Send to Cloud
+    const msg: Message = { id: Date.now().toString(), senderId: currentUser.id, senderName: currentUser.username, content: type === 'text' ? content : `Sent a ${type}`, timestamp: Date.now(), type, mediaUrl: (type !== 'text' ? content : undefined), fileName, replyTo: replyingTo ? { id: replyingTo.id, senderName: replyingTo.senderName, content: replyingTo.content } : undefined };
+    setReplyingTo(null); cloud.setTypingStatus(space.id, currentUser.id, false);
     cloud.sendMessage(space.id, msg);
-    
     if (type === 'text' && content.toLowerCase().includes('@ai')) {
-      if (currentUser.settings.aiInChat) {
-          setAiLoading(true);
-          const reply = await AI.getAiResponse(content, newMsgs);
-          const aiMsg: Message = { 
-              id: 'ai-'+Date.now(), senderId: 'ai', senderName: 'Duo AI', 
-              content: reply, timestamp: Date.now(), type: 'ai' 
-          };
-          cloud.sendMessage(space.id, aiMsg);
-          setAiLoading(false);
-      }
+      setAiLoading(true); const reply = await AI.getAiResponse(content, space.messages || [], currentUser.settings.aiTone);
+      cloud.sendMessage(space.id, { id: 'ai-'+Date.now(), senderId: 'ai', senderName: 'Duo AI', content: reply, timestamp: Date.now(), type: 'ai' });
+      setAiLoading(false);
     }
   };
 
-  const updateGame = (newBoard: (string|null)[]) => {
-      if(!space) return;
-      const newState = { board: newBoard, status: 'active' as const };
-      cloud.updateGame(space.id, newState);
-  }
-
-  const handleThemeChange = (t: ThemeColor) => {
-      if (!space) return;
-      cloud.updateTheme(space.id, t);
-  };
-
-  const startVoice = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = e => chunks.push(e.data);
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        setVoiceDraft({ blob, url });
-        stream.getTracks().forEach(t => t.stop());
-        setIsRecording(false);
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setIsRecording(true);
-    } catch (e) { alert("Mic required for voice notes."); }
-  };
-
-  const stopVoice = () => { 
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-        mediaRecorderRef.current.stop(); 
-      }
-      setIsRecording(false); 
-  };
-
-  const discardDraft = () => {
-      setVoiceDraft(null);
-      setIsPlayingDraft(false);
-  };
-
-  const sendDraft = () => {
-      if (!voiceDraft) return;
-      const reader = new FileReader();
-      reader.onloadend = () => {
-          sendMessage('voice', reader.result as string);
-          setVoiceDraft(null);
-          setIsPlayingDraft(false);
-      };
-      reader.readAsDataURL(voiceDraft.blob);
-  };
-  
-  const toggleDraftPlay = () => {
-      if (!draftAudioRef.current) return;
-      if (isPlayingDraft) {
-          draftAudioRef.current.pause();
-      } else {
-          draftAudioRef.current.play();
-      }
-      setIsPlayingDraft(!isPlayingDraft);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const type = file.type.startsWith('image/') ? 'image' : 'file';
-      sendMessage(type, reader.result as string, file.name);
-    };
-    reader.readAsDataURL(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const updateSetting = (key: keyof User['settings'], val: any) => {
-      const newSettings = { ...currentUser.settings, [key]: val };
-      API.saveSession({ user: { ...currentUser, settings: newSettings } });
-      onUpdateUser({ ...currentUser, settings: newSettings }); // No reload, just state update
-  };
-
   if (!space) return null;
-  const isAlone = (space.members || []).length < 2;
+  const winner = space.activeGame?.status === 'won' ? 'X' : null; // Simplified game check
 
   return (
-    <div className="h-full flex flex-col bg-slate-50 dark:bg-slate-950 transition-colors duration-700 overflow-hidden">
-      {showSketchpad && <Sketchpad onCancel={() => setShowSketchpad(false)} onSave={(url) => { sendMessage('image', url); setShowSketchpad(false); }} />}
-
+    <div className="h-full flex flex-col bg-slate-50 dark:bg-slate-950 overflow-hidden">
+      {showSketchpad && <Sketchpad onCancel={() => setShowSketchpad(false)} onSave={async (url) => { const r = await fetch(url); const b = await r.blob(); const link = await cloud.uploadFile(b, 'images'); sendMessage('image', link); setShowSketchpad(false); }} />}
       <header className="px-8 py-8 flex justify-between items-center bg-white/95 dark:bg-slate-900/95 backdrop-blur-3xl border-b border-slate-100 dark:border-slate-800 z-50">
-        <button onClick={() => navigate('/')} className="text-slate-400 p-2 hover:text-vibe-primary transition-all"><ArrowLeft size={32} /></button>
-        <div className="text-center">
-          <h2 className="font-black text-2xl dark:text-white leading-none tracking-tight">{space.name}</h2>
-          <div className="mt-2 flex items-center justify-center gap-2">
-             <div className={`w-2 h-2 rounded-full ${isAlone ? 'bg-amber-400' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'}`}></div>
-             <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">{isAlone ? 'Single User' : 'Cloud Sync Active'}</span>
-          </div>
-        </div>
-        <button onClick={() => setActiveTab('vibe')} className="p-3 bg-vibe-soft text-vibe-primary rounded-2xl active:scale-90 transition-all"><Settings size={24} /></button>
+        <button onClick={() => navigate('/')} className="text-slate-400 p-2"><ArrowLeft size={32} /></button>
+        <div className="text-center"><h2 className="font-black text-2xl dark:text-white leading-none tracking-tight">{space.name}</h2></div>
+        <button onClick={() => setActiveTab('vibe')} className="p-3 bg-vibe-soft text-vibe-primary rounded-2xl"><Settings size={24} /></button>
       </header>
-
-      <div className="flex-1 overflow-y-auto no-scrollbar relative">
+      <div className="flex-1 overflow-y-auto no-scrollbar relative p-8 space-y-2 pb-56">
         {activeTab === 'chat' && (
-          <div className="p-8 space-y-10 pb-56">
-            {(space.messages || []).map((m) => (
-              <div key={m.id} className={`flex flex-col ${m.senderId === currentUser.id ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-4 duration-700 group`}>
-                <div className={`px-8 py-5 rounded-[2.5rem] font-bold shadow-sm max-w-[88%] relative ${m.senderId === currentUser.id ? 'bg-vibe text-white rounded-tr-none shadow-2xl shadow-vibe/20' : m.senderId === 'ai' ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 rounded-tl-none' : 'bg-white dark:bg-slate-800 dark:text-white rounded-tl-none border border-slate-50 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-none'}`}>
-                  {m.replyTo && (
-                    <div className={`mb-2 pb-2 border-b border-white/20 text-sm opacity-80 flex flex-col ${m.senderId === currentUser.id ? 'text-white/90' : 'text-slate-500 dark:text-slate-400'}`}>
-                        <span className="text-[10px] font-black uppercase tracking-widest mb-1">{m.replyTo.senderName}</span>
-                        <span className="truncate italic line-clamp-1">{m.replyTo.content}</span>
-                    </div>
-                  )}
+          <>
+            {(space.messages || []).map((m, i, arr) => {
+              const isMe = m.senderId === currentUser.id;
+              return (
+              <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-4 group`}>
+                <div className={`px-6 py-4 font-bold shadow-sm max-w-[85%] relative rounded-[2.5rem] ${isMe ? 'bg-vibe text-white' : 'bg-white dark:bg-slate-800 dark:text-white border dark:border-slate-700'}`}>
                   {m.type === 'image' && <img src={m.mediaUrl} className="rounded-3xl mb-3 w-full max-h-[30rem] object-cover shadow-inner" />}
-                  {m.type === 'voice' && <audio src={m.mediaUrl} controls className="w-full h-12 mb-3 rounded-full overflow-hidden brightness-90" />}
-                  {m.type === 'file' && <a href={m.mediaUrl} download={m.fileName} className="flex items-center gap-4 p-5 bg-slate-100/50 dark:bg-slate-700/50 rounded-3xl mb-3 border border-slate-200 dark:border-slate-600"><Paperclip size={24}/> <span className="text-sm truncate font-black uppercase tracking-widest">{m.fileName}</span></a>}
                   <p className="whitespace-pre-wrap leading-relaxed text-lg">{m.content}</p>
                 </div>
-                <div className="mt-3 px-4 flex items-center gap-4 opacity-60">
-                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-                   <button onClick={() => setReplyingTo(m)} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-vibe-primary"><CornerUpLeft size={16} /></button>
-                </div>
+                <div className="mt-1 flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4">Delivered</span></div>
               </div>
-            ))}
-            {aiLoading && <div className="flex gap-2 px-8 py-4 animate-pulse"><div className="w-3 h-3 bg-vibe-primary rounded-full"></div><div className="w-3 h-3 bg-vibe-primary rounded-full"></div><div className="w-3 h-3 bg-vibe-primary rounded-full"></div></div>}
+            )})}
+            {aiLoading && <div className="flex flex-col items-start mt-4 animate-in fade-in"><div className="px-6 py-4 rounded-[2rem] bg-emerald-50 dark:bg-emerald-950 border border-emerald-100"><Loader2 className="animate-spin text-emerald-500" size={24} /></div></div>}
+            
+            {/* TYPING INDICATOR UI */}
+            {typingUsers.map(uid => {
+                const tu = space.members.find(m => m.id === uid);
+                return (
+                    <div key={uid} className="flex flex-col items-start mt-4 animate-in fade-in slide-in-from-bottom-2">
+                        <div className="px-6 py-3.5 rounded-[2rem] rounded-tl-sm bg-white dark:bg-slate-800 text-slate-500 flex items-center gap-3 border border-slate-100 dark:border-slate-700 shadow-sm">
+                            <div className="flex gap-1.5 items-center">
+                                <div className="w-1.5 h-1.5 bg-vibe-primary rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                <div className="w-1.5 h-1.5 bg-vibe-primary rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                <div className="w-1.5 h-1.5 bg-vibe-primary rounded-full animate-bounce"></div>
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{tu?.username} typing</span>
+                        </div>
+                    </div>
+                );
+            })}
             <div ref={scrollRef} />
-          </div>
-        )}
-
-        {activeTab === 'play' && (
-          <div className="h-full flex flex-col items-center justify-center p-8 space-y-16 animate-in zoom-in duration-700">
-             <header className="text-center space-y-2">
-                <h3 className="text-5xl font-black uppercase tracking-tighter dark:text-white">The Arena</h3>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-[0.4em]">Combat Sim Synced</p>
-             </header>
-             <div className="grid grid-cols-3 gap-6 bg-white dark:bg-slate-900 p-10 rounded-[4rem] shadow-5xl border border-slate-100 dark:border-slate-800">
-                {(space.activeGame?.board || Array(9).fill(null)).map((cell, i) => (
-                  <button key={i} onClick={() => {
-                    const board = [...(space.activeGame?.board || Array(9).fill(null))];
-                    if (board[i]) return;
-                    board[i] = board.filter(Boolean).length % 2 === 0 ? 'X' : 'O';
-                    updateGame(board);
-                  }} className="w-24 h-24 bg-slate-50 dark:bg-slate-800 rounded-[2rem] text-5xl font-black dark:text-white flex items-center justify-center shadow-inner active:scale-90 transition-all hover:bg-slate-100 dark:hover:bg-slate-700">{cell}</button>
-                ))}
-             </div>
-             <Button onClick={() => updateGame(Array(9).fill(null))} variant="secondary" className="px-12 py-4 rounded-full border-dashed font-black uppercase tracking-widest">Reset Combat</Button>
-          </div>
-        )}
-
-        {activeTab === 'vibe' && (
-          <div className="p-10 space-y-12 animate-slide-up pb-48">
-             <div className="flex justify-between items-center">
-                <h3 className="text-5xl font-black dark:text-white tracking-tighter">Settings</h3>
-             </div>
-             <Card className="!p-8 space-y-8 bg-white dark:bg-slate-900 border-none shadow-5xl rounded-[3rem]">
-                <div className="space-y-6">
-                    {/* Dark Mode */}
-                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 rounded-2xl"><Moon size={24}/></div>
-                            <div>
-                                <h4 className="font-bold dark:text-white">Dark Mode</h4>
-                                <p className="text-xs text-slate-400 font-medium">Deep space aesthetics</p>
-                            </div>
-                        </div>
-                        <button onClick={() => updateSetting('darkMode', !currentUser.settings.darkMode)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.darkMode ? 'bg-vibe' : 'bg-slate-300'}`}>
-                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.darkMode ? 'translate-x-6' : ''}`} />
-                        </button>
-                    </div>
-
-                    {/* Last Seen */}
-                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-2xl"><Clock size={24}/></div>
-                            <div>
-                                <h4 className="font-bold dark:text-white">Last Seen</h4>
-                                <p className="text-xs text-slate-400 font-medium">Show activity status</p>
-                            </div>
-                        </div>
-                        <button onClick={() => updateSetting('showLastSeen', !currentUser.settings.showLastSeen)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.showLastSeen ? 'bg-vibe' : 'bg-slate-300'}`}>
-                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.showLastSeen ? 'translate-x-6' : ''}`} />
-                        </button>
-                    </div>
-
-                    {/* Read Receipts */}
-                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-sky-100 dark:bg-sky-900/30 text-sky-600 rounded-2xl"><CheckCheck size={24}/></div>
-                            <div>
-                                <h4 className="font-bold dark:text-white">Read Receipts</h4>
-                                <p className="text-xs text-slate-400 font-medium">Show blue checks</p>
-                            </div>
-                        </div>
-                        <button onClick={() => updateSetting('readReceipts', !currentUser.settings.readReceipts)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.readReceipts ? 'bg-vibe' : 'bg-slate-300'}`}>
-                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.readReceipts ? 'translate-x-6' : ''}`} />
-                        </button>
-                    </div>
-
-                    {/* Duo AI */}
-                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-3xl">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-2xl"><Brain size={24}/></div>
-                            <div>
-                                <h4 className="font-bold dark:text-white">Duo AI</h4>
-                                <p className="text-xs text-slate-400 font-medium">Summon via @ai</p>
-                            </div>
-                        </div>
-                        <button onClick={() => updateSetting('aiInChat', !currentUser.settings.aiInChat)} className={`w-14 h-8 rounded-full p-1 transition-colors ${currentUser.settings.aiInChat ? 'bg-vibe' : 'bg-slate-300'}`}>
-                            <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform ${currentUser.settings.aiInChat ? 'translate-x-6' : ''}`} />
-                        </button>
-                    </div>
-                </div>
-
-                <section className="space-y-6 pt-6 border-t border-slate-100 dark:border-slate-800">
-                   <h4 className="text-xs font-black uppercase text-slate-400 tracking-[0.5em] px-2">Theme Accent</h4>
-                   <div className="grid grid-cols-3 gap-4">
-                      {(['violet', 'rose', 'red', 'sky', 'emerald', 'gold'] as ThemeColor[]).map(t => (
-                        <button key={t} onClick={() => handleThemeChange(t)} className={`h-16 rounded-[1.8rem] shadow-sm transition-all duration-300 ${space.theme === t ? 'ring-4 ring-vibe ring-offset-2 ring-offset-white dark:ring-offset-slate-900 scale-105' : 'opacity-40 hover:opacity-100'} ${t === 'violet' ? 'bg-violet-600' : t === 'rose' ? 'bg-rose-500' : t === 'red' ? 'bg-red-600' : t === 'sky' ? 'bg-sky-500' : t === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                      ))}
-                   </div>
-                </section>
-                <div className="pt-6">
-                  <Button variant="danger" className="w-full py-5 rounded-3xl font-black uppercase tracking-[0.3em]" onClick={() => { if(confirm("Purge Dimension?")) { API.deleteSpace(space.id); navigate('/'); }}}>Purge Dimension</Button>
-                </div>
-             </Card>
-          </div>
+          </>
         )}
       </div>
-
-      {activeTab === 'chat' && (
-        <div className="fixed bottom-36 left-0 right-0 px-8 z-50">
+      <div className="fixed bottom-36 left-0 right-0 px-8 z-50">
           <div className="max-w-5xl mx-auto glass rounded-[3.5rem] shadow-5xl border border-white/20 overflow-hidden relative">
-             {/* Reply Banner */}
-             {replyingTo && (
-               <div className="flex justify-between items-center px-6 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 animate-slide-up">
-                   <div className="flex flex-col overflow-hidden mr-4">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-vibe-primary">Replying to {replyingTo.senderName}</span>
-                       <span className="text-xs text-slate-500 dark:text-slate-400 truncate mt-1">{replyingTo.content}</span>
-                   </div>
-                   <button onClick={() => setReplyingTo(null)} className="p-2 bg-slate-200 dark:bg-slate-700 rounded-full text-slate-500 hover:text-rose-500 transition-colors"><X size={14} /></button>
-               </div>
-             )}
-
              <div className="p-4 flex items-center gap-4 h-[5.5rem]">
-             {voiceDraft ? (
-                <div className="w-full flex items-center justify-between px-2 animate-in fade-in slide-in-from-bottom-2">
-                    <audio ref={draftAudioRef} src={voiceDraft.url} onEnded={() => setIsPlayingDraft(false)} className="hidden" />
-                    <button onClick={discardDraft} className="w-12 h-12 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center hover:bg-rose-200 transition-colors">
-                        <Trash2 size={24} />
-                    </button>
-                    
-                    <div className="flex-1 mx-4 flex items-center gap-3 bg-slate-100 dark:bg-slate-800 rounded-full px-4 py-3">
-                        <button onClick={toggleDraftPlay} className="text-slate-600 dark:text-slate-300">
-                            {isPlayingDraft ? <Pause size={24} fill="currentColor"/> : <Play size={24} fill="currentColor"/>}
-                        </button>
-                        <div className="h-1 flex-1 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
-                             <div className={`h-full bg-vibe transition-all duration-300 ${isPlayingDraft ? 'w-full animate-[width_10s_linear]' : 'w-0'}`}></div> 
-                        </div>
-                        <span className="text-xs font-bold text-slate-400">Preview</span>
-                    </div>
-
-                    <button onClick={sendDraft} className="w-14 h-14 bg-vibe text-white rounded-[2rem] flex items-center justify-center shadow-xl active:scale-95 transition-all">
-                        <Send size={28} />
-                    </button>
-                </div>
-             ) : (
-                <>
-                    <div className="flex gap-2">
-                        <button onClick={() => fileInputRef.current?.click()} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Paperclip size={28}/></button>
-                        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="image/*, .pdf, .doc, .docx" />
-                        <button onClick={() => setShowSketchpad(true)} className="p-4 text-slate-400 hover:text-vibe-primary transition-all active:scale-90"><Pencil size={28}/></button>
-                    </div>
-                    <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder={isRecording ? "Recording audio..." : "Type a message..."} disabled={isRecording} onKeyDown={(e) => { 
-                        if(e.key === 'Enter' && chatInput.trim()) { sendMessage('text', chatInput); setChatInput(''); }
-                    }} className="flex-1 bg-transparent px-4 py-5 outline-none font-bold dark:text-white placeholder:text-slate-300 text-lg" />
-                    {chatInput.trim() ? (
-                        <button onClick={() => { sendMessage('text', chatInput); setChatInput(''); }} className="w-16 h-16 bg-vibe text-white rounded-[2rem] flex items-center justify-center shadow-2xl active:scale-90 transition-all"><Send size={28}/></button>
-                    ) : (
-                        <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} onMouseLeave={(e) => { if(isRecording) stopVoice(); }} className={`w-16 h-16 rounded-[2rem] flex items-center justify-center transition-all shadow-xl ${isRecording ? 'bg-rose-500 scale-110 animate-pulse text-white ring-4 ring-rose-200' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
-                           {isRecording ? <div className="w-6 h-6 bg-white rounded-md animate-spin-slow" /> : <Mic size={28}/>}
-                        </button>
-                    )}
-                </>
-             )}
-            </div>
+                <button onClick={() => setShowSketchpad(true)} className="p-4 text-slate-400"><Pencil size={28}/></button>
+                <input value={chatInput} onChange={e => { setChatInput(e.target.value); handleTyping(); }} placeholder="Type a message..." onKeyDown={(e) => { if(e.key === 'Enter' && chatInput.trim()) { sendMessage('text', chatInput); setChatInput(''); } }} className="flex-1 bg-transparent px-4 outline-none font-bold dark:text-white placeholder:text-slate-300 text-lg" />
+                <button onClick={() => { if(chatInput.trim()) { sendMessage('text', chatInput); setChatInput(''); }}} className="w-16 h-16 bg-vibe text-white rounded-[2rem] flex items-center justify-center shadow-2xl"><Send size={28}/></button>
+             </div>
           </div>
-        </div>
-      )}
-
+      </div>
       <nav className="h-32 bg-white/95 dark:bg-slate-900/95 backdrop-blur-3xl border-t border-slate-100 dark:border-slate-800 flex justify-around items-center px-12 pb-10 z-50">
         <NavBtn active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} icon={<MessageCircle />} label="Chat" />
         <NavBtn active={activeTab === 'play'} onClick={() => setActiveTab('play')} icon={<Gamepad2 />} label="Arena" />
@@ -760,88 +396,20 @@ const Space = ({ user: currentUser, onUpdateUser }: { user: User, onUpdateUser: 
   );
 };
 
-// --- Main Layout for Persistent Cloud Logic ---
 const MainLayout = ({ user, onUpdateUser }: { user: User, onUpdateUser: (u: User) => void }) => {
-    const navigate = useNavigate();
-    const [incomingRequest, setIncomingRequest] = useState<P2PPayload | null>(null);
-
-    useEffect(() => {
-        cloud.initialize(user, () => {});
-
-        const unsubscribe = cloud.subscribeToInvites(user.id, (payload) => {
-             setIncomingRequest(payload);
-        });
-        return unsubscribe;
-    }, [user.id]);
-
-    const acceptInvite = () => {
-         if (!incomingRequest) return;
-         const payload = incomingRequest;
-         
-         const currentSpaces = API.getMySpaces(user.id);
-         let targetSpace = currentSpaces.find(s => s.members.some(m => m.username === payload.fromUsername));
-         if (!targetSpace) targetSpace = currentSpaces.find(s => s.ownerId === user.id);
-         
-         // Create a shared ID based on sorted user IDs to ensure both get same space ID
-         // Or just accept the one created by sender? The payload currently just has 'user'.
-         // Let's create a new space.
-         if (!targetSpace) targetSpace = API.createSpace(user, `${user.username} & ${payload.fromUsername}`);
-
-         // Add the new member locally
-         if (!targetSpace.members.some(m => m.id === payload.data.user.id)) {
-             targetSpace.members.push(payload.data.user);
-             API.saveSpace(targetSpace);
-         }
-         
-         // Sync to cloud
-         cloud.syncSpace(targetSpace);
-
-         setIncomingRequest(null);
-         navigate(`/space/${targetSpace.id}`);
-    };
-
-    return (
-        <>
-            {incomingRequest && <InviteModal request={incomingRequest} onAccept={acceptInvite} onDecline={() => setIncomingRequest(null)} />}
-            <Routes>
-                <Route path="/" element={<Dashboard user={user} />} />
-                <Route path="/space/:spaceId" element={<Space user={user} onUpdateUser={onUpdateUser} />} />
-            </Routes>
-        </>
-    );
+    useEffect(() => { cloud.initialize(user, () => {}); }, [user.id]);
+    return (<Routes><Route path="/" element={<Dashboard user={user} />} /><Route path="/space/:spaceId" element={<Space user={user} onUpdateUser={onUpdateUser} />} /></Routes>);
 };
 
 const App = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => { 
-      const s = API.getSession(); 
-      if (s) setUser(s.user); 
-      setLoading(false); 
-  }, []);
-
-  // Listen for Dark Mode
+  useEffect(() => { const s = API.getSession(); if (s) setUser(s.user); setLoading(false); }, []);
   useEffect(() => {
-      if (user?.settings.darkMode) {
-          document.documentElement.classList.add('dark');
-      } else {
-          document.documentElement.classList.remove('dark');
-      }
+      if (user?.settings.darkMode) document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
   }, [user?.settings.darkMode]);
-
-  const updateUser = (updatedUser: User) => {
-      setUser(updatedUser);
-      // API.saveSession is already handled by caller (Space), but to be safe/consistent:
-      // In the Space component I call API.saveSession AND update state.
-      // Ideally I should move API.saveSession here, but it's fine.
-  };
-
   if (loading) return null;
-  return (
-    <HashRouter>
-        {!user ? <Auth onLogin={setUser} /> : <MainLayout user={user} onUpdateUser={updateUser} />}
-    </HashRouter>
-  );
+  return (<HashRouter>{!user ? <Auth onLogin={setUser} /> : <MainLayout user={user} onUpdateUser={setUser} />}</HashRouter>);
 };
 export default App;

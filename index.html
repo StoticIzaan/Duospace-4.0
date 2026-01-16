@@ -101,31 +101,20 @@
       }
       .animate-spin-slow { animation: spin-slow 8s linear infinite; }
       
-      .pulsating-circle {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translateX(-50%) translateY(-50%);
-        width: 30px;
-        height: 30px;
+      /* New Animations */
+      @keyframes bounce-drop {
+        0% { transform: translateY(-300%); opacity: 0; }
+        60% { transform: translateY(20%); opacity: 1; }
+        80% { transform: translateY(-10%); }
+        100% { transform: translateY(0); }
       }
-      .pulsating-circle:before {
-        content: '';
-        position: relative;
-        display: block;
-        width: 300%;
-        height: 300%;
-        box-sizing: border-box;
-        margin-left: -100%;
-        margin-top: -100%;
-        border-radius: 45px;
-        background-color: #01a4e9;
-        animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+      .animate-drop { animation: bounce-drop 0.6s cubic-bezier(0.25, 1, 0.5, 1); }
+
+      @keyframes waveform {
+        0%, 100% { height: 20%; }
+        50% { height: 100%; }
       }
-      @keyframes pulse-ring {
-        0% { transform: scale(0.33); }
-        80%, 100% { opacity: 0; }
-      }
+      .animate-waveform { animation: waveform 0.8s ease-in-out infinite; }
     </style>
     <script>
       tailwind.config = {
@@ -141,6 +130,9 @@
             borderRadius: {
               '4xl': '2rem',
               '5xl': '3.5rem',
+            },
+            animation: {
+                'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
             }
           }
         }

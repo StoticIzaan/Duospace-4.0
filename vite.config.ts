@@ -1,9 +1,12 @@
 
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import process from 'node:process';
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, (process as any).cwd(), '');
+  // Load env file based on `mode` in the current working directory.
+  const env = loadEnv(mode, process.cwd(), '');
+  
   return {
     plugins: [react()],
     build: {
@@ -11,14 +14,16 @@ export default defineConfig(({ mode }) => {
       sourcemap: false
     },
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY),
-      'process.env.FIREBASE_API_KEY': JSON.stringify(env.FIREBASE_API_KEY),
-      'process.env.FIREBASE_AUTH_DOMAIN': JSON.stringify(env.FIREBASE_AUTH_DOMAIN),
-      'process.env.FIREBASE_DB_URL': JSON.stringify(env.FIREBASE_DB_URL),
-      'process.env.FIREBASE_PROJECT_ID': JSON.stringify(env.FIREBASE_PROJECT_ID),
-      'process.env.FIREBASE_STORAGE_BUCKET': JSON.stringify(env.FIREBASE_STORAGE_BUCKET),
-      'process.env.FIREBASE_SENDER_ID': JSON.stringify(env.FIREBASE_SENDER_ID),
-      'process.env.FIREBASE_APP_ID': JSON.stringify(env.FIREBASE_APP_ID)
+      // Required specifically for the @google/genai SDK
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY),
+      // Define Firebase variables to be accessible via process.env
+      'process.env.VITE_FIREBASE_API_KEY': JSON.stringify(env.VITE_FIREBASE_API_KEY),
+      'process.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(env.VITE_FIREBASE_AUTH_DOMAIN),
+      'process.env.VITE_FIREBASE_DATABASE_URL': JSON.stringify(env.VITE_FIREBASE_DATABASE_URL),
+      'process.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(env.VITE_FIREBASE_PROJECT_ID),
+      'process.env.VITE_FIREBASE_STORAGE_BUCKET': JSON.stringify(env.VITE_FIREBASE_STORAGE_BUCKET),
+      'process.env.VITE_FIREBASE_SENDER_ID': JSON.stringify(env.VITE_FIREBASE_SENDER_ID),
+      'process.env.VITE_FIREBASE_APP_ID': JSON.stringify(env.VITE_FIREBASE_APP_ID),
     }
   };
 });
