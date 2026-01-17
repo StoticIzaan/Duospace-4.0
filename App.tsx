@@ -5,7 +5,7 @@ import {
   CheckCircle2, Rocket, Waves, XCircle, Settings, Image as ImageIcon,
   Mic, MicOff, Moon, Sun, ShieldCheck, Users, Palette, Radio, Share2,
   LayoutGrid, Users2, Trash2, Power, PlugZap, Music2, PenTool, Eraser, MoreVertical, Edit2, Play, Pause, ExternalLink, ListMusic, Eye, EyeOff, Activity, Trophy, StopCircle,
-  ChevronUp, ChevronDown, PlayCircle, Copy
+  ChevronUp, ChevronDown, PlayCircle, Copy, Loader2
 } from 'lucide-react';
 import { p2p } from './services/peerService'; 
 import { User, Message, Friend, ThemeColor, PlaylistItem, RoomSettings, PongState } from './types';
@@ -62,25 +62,96 @@ const Toast = ({ message, onClose }: { message: string, onClose: () => void }) =
     </div>
 );
 
-const AddFriendModal = ({ onClose }: { onClose: () => void }) => {
+const InviteModal = ({ onClose, friends, user }: { onClose: () => void, friends: Friend[], user: User }) => {
     const [code, setCode] = useState('');
-    const handleSend = () => {
-        p2p.sendFriendRequest(code.trim());
-        onClose();
+    const [invitingId, setInvitingId] = useState<string | null>(null);
+    const [sentIds, setSentIds] = useState<string[]>([]);
+
+    const handleInviteFriend = async (friendId: string) => {
+        setInvitingId(friendId);
+        await p2p.inviteToRoom(friendId, user.id); // Send room ID as user ID for simple P2P
+        // Artificial delay for UI feedback
+        setTimeout(() => {
+            setInvitingId(null);
+            setSentIds(prev => [...prev, friendId]);
+        }, 800);
     };
+
+    const handleAddFriend = () => {
+        p2p.sendFriendRequest(code.trim());
+        // We close logic is handled by listener status usually, but for UX we can clear or keep open
+        setCode('');
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in">
-            <Card className="w-full max-w-sm !p-6 space-y-4 !rounded-2xl border-2 border-white/20 relative shadow-2xl bg-white dark:bg-slate-900">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-rose-500"><XCircle size={20}/></button>
-                <div className="text-center pt-2">
-                    <div className="w-16 h-16 bg-vibe-soft rounded-full flex items-center justify-center mx-auto mb-3 text-vibe-primary">
-                        <UserPlus size={32} />
+            <Card className="w-full max-w-md !p-0 !rounded-2xl border-2 border-white/20 relative shadow-2xl bg-white dark:bg-slate-900 overflow-hidden flex flex-col max-h-[80vh]">
+                <div className="p-4 border-b dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-white/5">
+                    <div>
+                         <h3 className="text-lg font-black tracking-tight">Invite to Space</h3>
+                         <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Manage Access</p>
                     </div>
-                    <h3 className="text-xl font-black">Expand Your Circle</h3>
-                    <p className="text-xs text-slate-400 font-medium mt-1">Enter your friend's Signal Code to connect.</p>
+                    <button onClick={onClose} className="text-slate-400 hover:text-rose-500 transition-colors"><XCircle size={24}/></button>
                 </div>
-                <Input value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. alex-X92F" className="text-center text-lg !py-3 font-mono" />
-                <Button onClick={handleSend} disabled={!code.trim()} className="w-full !py-3 !text-sm">Send Request</Button>
+                
+                <div className="overflow-y-auto p-4 space-y-4 flex-1">
+                    {/* Friends List Section */}
+                    <div>
+                        <h4 className="text-xs font-black uppercase text-slate-400 mb-3 flex items-center gap-2"><Users size={14}/> Your Circle</h4>
+                        <div className="space-y-2">
+                            {friends.length === 0 ? (
+                                <p className="text-sm text-slate-500 italic text-center py-4">No friends yet. Add one below!</p>
+                            ) : (
+                                friends.map(f => {
+                                    const isSent = sentIds.includes(f.id);
+                                    const isLoading = invitingId === f.id;
+                                    return (
+                                        <div key={f.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-100 dark:bg-slate-800 border border-transparent hover:border-vibe/20 transition-all">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-vibe-soft text-vibe-primary flex items-center justify-center font-bold text-xs">{f.username[0].toUpperCase()}</div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-sm">{f.username}</span>
+                                                    <span className="text-[9px] uppercase font-black text-slate-400">{f.status}</span>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => !isSent && handleInviteFriend(f.id)}
+                                                disabled={isSent || isLoading}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                                    isSent 
+                                                    ? 'bg-emerald-500 text-white' 
+                                                    : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-vibe hover:text-white shadow-sm'
+                                                }`}
+                                            >
+                                                {isLoading ? <Loader2 size={14} className="animate-spin"/> : isSent ? <CheckCircle2 size={14}/> : <Send size={14}/>}
+                                                {isSent ? 'Sent' : 'Invite'}
+                                            </button>
+                                        </div>
+                                    )
+                                })
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="border-t dark:border-white/5 my-4"></div>
+
+                    {/* Add New Friend Section */}
+                    <div>
+                        <h4 className="text-xs font-black uppercase text-slate-400 mb-3 flex items-center gap-2"><Plus size={14}/> Add New Connection</h4>
+                        <div className="flex gap-2">
+                            <Input 
+                                value={code} 
+                                onChange={e => setCode(e.target.value)} 
+                                placeholder="Enter Signal Code..." 
+                                className="!py-2.5 font-mono text-sm" 
+                            />
+                            <Button onClick={handleAddFriend} disabled={!code.trim()} className="shrink-0 !py-2.5">Add</Button>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-2 leading-tight">
+                            Enter a friend's Signal Code to add them to your circle. Once added, they will appear in the list above.
+                        </p>
+                    </div>
+                </div>
             </Card>
         </div>
     );
@@ -1082,7 +1153,7 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
             {/* Overlays */}
             {gameActive && <PongGame isHost={isHost} p1Name={isHost ? user.username : friend?.username} p2Name={!isHost ? user.username : friend?.username} onClose={() => { setGameActive(false); if(isHost) p2p.send({ type: 'GAME_SYNC', payload: { gameStatus: 'ended' }}); }} />}
             {showSketch && <Sketchpad onSend={(blob) => send('image', undefined, blob)} onClose={() => setShowSketch(false)} />}
-            {showAddFriend && <AddFriendModal onClose={() => setShowAddFriend(false)} />}
+            {showAddFriend && <InviteModal friends={friendsList} user={user} onClose={() => setShowAddFriend(false)} />}
         </div>
     );
 };

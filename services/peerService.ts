@@ -236,11 +236,23 @@ class P2PService {
 
     async inviteToRoom(friendId: string, roomId: string) {
         if (!this.peer) return;
-        const conn = this.peer.connect(friendId);
-        conn.on('open', () => {
-            conn.send({ type: 'ROOM_INVITE', user: this._user, roomId });
-            setTimeout(() => conn.close(), 1000); 
-        });
+        
+        // Check if already connected (optimization)
+        const existingConn = this.connections.find(c => c.peer === friendId);
+        if (existingConn && existingConn.open) {
+             existingConn.send({ type: 'ROOM_INVITE', user: this._user, roomId });
+             return;
+        }
+
+        try {
+            const conn = this.peer.connect(friendId);
+            conn.on('open', () => {
+                conn.send({ type: 'ROOM_INVITE', user: this._user, roomId });
+                setTimeout(() => conn.close(), 2000); // Close after sending invite
+            });
+        } catch(e) {
+            console.error("Invite Error", e);
+        }
     }
 
     connectToRoom(hostId: string) {
