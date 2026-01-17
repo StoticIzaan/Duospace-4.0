@@ -5,7 +5,7 @@ import {
   CheckCircle2, Rocket, Waves, XCircle, Settings, Image as ImageIcon,
   Mic, MicOff, Moon, Sun, ShieldCheck, Users, Palette, Radio, Share2,
   LayoutGrid, Users2, Trash2, Power, PlugZap, Music2, PenTool, Eraser, MoreVertical, Edit2, Play, Pause, ExternalLink, ListMusic, Eye, EyeOff, Activity, Trophy, StopCircle,
-  ChevronUp, ChevronDown, PlayCircle
+  ChevronUp, ChevronDown, PlayCircle, Copy
 } from 'lucide-react';
 import { p2p } from './services/peerService'; 
 import { User, Message, Friend, ThemeColor, PlaylistItem, RoomSettings, PongState } from './types';
@@ -226,6 +226,8 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
             setActiveFriend(req.user);
             p2p.connectToRoom(req.user.id);
             setView('room');
+        } else if (req.type === 'friend_request') {
+            p2p.confirmFriendReq(req.user);
         }
         setInbox(inbox.filter((_: any, i: number) => i !== index));
     };
@@ -255,14 +257,26 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
     return (
         <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
             <aside className={`${mobileTab === 'friends' ? 'flex' : 'hidden'} md:flex w-full md:w-[320px] lg:w-[400px] border-r dark:border-slate-800 flex-col shrink-0 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md h-full pb-20 md:pb-0`}>
-                <div className="p-4 border-b dark:border-slate-800 flex items-center justify-between">
-                    <div>
-                        <h2 className="text-xl font-black tracking-tighter bg-clip-text text-transparent bg-vibe">DuoSpace</h2>
-                        <Badge color="bg-emerald-500/10 text-emerald-500 font-black">@{user.username}</Badge>
+                <div className="p-4 border-b dark:border-slate-800">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 className="text-xl font-black tracking-tighter bg-clip-text text-transparent bg-vibe">DuoSpace</h2>
+                            <Badge color="bg-emerald-500/10 text-emerald-500 font-black">@{user.username}</Badge>
+                        </div>
+                        <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all active:scale-90">
+                            <Settings size={20} />
+                        </button>
                     </div>
-                    <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all active:scale-90">
-                        <Settings size={20} />
-                    </button>
+                    {/* User Code Display */}
+                    <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" onClick={() => navigator.clipboard.writeText(user.id)}>
+                        <div className="flex flex-col min-w-0">
+                            <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Your Signal Code</span>
+                            <span className="font-mono text-sm font-bold text-vibe-primary truncate">{user.id}</span>
+                        </div>
+                        <div className="p-2 text-slate-400 group-hover:text-vibe-primary transition-colors">
+                            <Copy size={16}/>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="p-4 space-y-3 flex-1 overflow-y-auto no-scrollbar">
@@ -293,7 +307,7 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                 </div>
 
                 <div className="p-4 bg-white/20 dark:bg-black/20 border-t dark:border-slate-800">
-                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Add Friend ID..." icon={<UserPlus size={16}/>} onIconClick={() => { p2p.sendFriendRequest(search); setSearch(''); }} className="!rounded-xl" />
+                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Add Friend Code..." icon={<UserPlus size={16}/>} onIconClick={() => { p2p.sendFriendRequest(search); setSearch(''); }} className="!rounded-xl" />
                 </div>
             </aside>
 
@@ -352,8 +366,15 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                             <div className="space-y-2">
                                 {inbox.map((req: any, i: number) => (
                                     <div key={i} className="flex items-center justify-between p-3 bg-slate-100 dark:bg-slate-800 rounded-xl animate-message-pop">
-                                        <div><p className="font-bold text-sm">{req.user.username}</p><p className="text-[8px] uppercase font-black opacity-50">Invite</p></div>
-                                        <button onClick={() => handleAction(req, i)} className="p-2 bg-vibe text-white rounded-lg"><CheckCircle2 size={14} /></button>
+                                        <div>
+                                            <p className="font-bold text-sm">{req.user.username}</p>
+                                            <p className="text-[8px] uppercase font-black opacity-50">
+                                                {req.type === 'friend_request' ? 'Friend Request' : 'Room Invite'}
+                                            </p>
+                                        </div>
+                                        <button onClick={() => handleAction(req, i)} className={`p-2 text-white rounded-lg ${req.type === 'friend_request' ? 'bg-emerald-500' : 'bg-vibe'}`}>
+                                            {req.type === 'friend_request' ? <UserPlus size={14}/> : <CheckCircle2 size={14} />}
+                                        </button>
                                     </div>
                                 ))}
                                 {inbox.length === 0 && <p className="text-[10px] font-bold text-slate-400 italic">No signals...</p>}

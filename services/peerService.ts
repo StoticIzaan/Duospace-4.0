@@ -22,8 +22,12 @@ class P2PService {
     get user() { return this._user; }
 
     async register(username: string): Promise<User> {
-        const id = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (id.length < 2) throw new Error("Identity too short");
+        const cleanName = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanName.length < 2) throw new Error("Identity too short");
+        
+        // Generate random 4-char code suffix for uniqueness and searchability
+        const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const id = `${cleanName}-${suffix}`;
         
         const user: User = {
             id,
@@ -95,8 +99,8 @@ class P2PService {
     private handleData(conn: any, data: any) {
         switch (data.type) {
             case 'FRIEND_REQ':
-                this.acceptFriend(conn);
-                this.callbacks.onFriendAdded(data.user);
+                // Route to inbox instead of auto-accepting
+                this.callbacks.onInbox({ type: 'friend_request', user: data.user });
                 break;
             case 'FRIEND_ACCEPT':
                 this.callbacks.onFriendAdded(data.user);
@@ -139,14 +143,30 @@ class P2PService {
 
     async sendFriendRequest(targetId: string) {
         if (!this.peer) return;
-        const conn = this.peer.connect(targetId.toLowerCase());
+        const conn = this.peer.connect(targetId);
         conn.on('open', () => {
             conn.send({ type: 'FRIEND_REQ', user: this._user });
             this.callbacks.onStatus('req_sent');
+            setTimeout(() => conn.close(), 2000); // Close after sending
+        });
+    }
+
+    // New method to manually accept friend requests from Inbox
+    confirmFriendReq(targetUser: User) {
+        if (!this.peer) return;
+        // 1. Add friend locally
+        this.callbacks.onFriendAdded(targetUser);
+        
+        // 2. Send Acceptance back
+        const conn = this.peer.connect(targetUser.id);
+        conn.on('open', () => {
+            conn.send({ type: 'FRIEND_ACCEPT', user: this._user });
+            setTimeout(() => conn.close(), 2000);
         });
     }
 
     acceptFriend(conn: any) {
+        // Deprecated in favor of confirmFriendReq via Inbox
         conn.send({ type: 'FRIEND_ACCEPT', user: this._user });
     }
 
