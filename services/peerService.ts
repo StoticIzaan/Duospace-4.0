@@ -2,9 +2,8 @@ import { User, Message } from '../types';
 
 class P2PService {
     private peer: any = null;
-    private connections: any[] = []; // Array to hold multiple guest connections
+    private connections: any[] = []; // Array to hold connections
     private _user: User | null = null;
-    // Track if we are the "Host" (meaning we are accepting connections, not just a guest)
     public isHostMode: boolean = false;
     
     private callbacks = {
@@ -59,7 +58,6 @@ class P2PService {
             });
 
             this.peer.on('connection', (conn: any) => {
-                // If we receive a connection, we are acting as a Host for that link
                 this.isHostMode = true;
                 this.setupConnection(conn);
             });
@@ -88,7 +86,7 @@ class P2PService {
             this.connections = this.connections.filter(c => c.peer !== conn.peer);
             this.emitConnections();
             if (this.connections.length === 0) {
-                this.isHostMode = false; // Reset if everyone leaves
+                this.isHostMode = false; 
                 this.callbacks.onStatus('ready');
             }
         });
@@ -97,7 +95,6 @@ class P2PService {
     private handleData(conn: any, data: any) {
         switch (data.type) {
             case 'FRIEND_REQ':
-                // Auto-accept friend requests for instant mutual connection
                 this.acceptFriend(conn);
                 this.callbacks.onFriendAdded(data.user);
                 break;
@@ -108,19 +105,27 @@ class P2PService {
                 this.callbacks.onInbox({ type: 'room', conn, user: data.user, roomId: data.roomId });
                 break;
             case 'CHAT':
-                // 1. Process the message locally
                 this.callbacks.onMessage(data.msg);
-                
-                // 2. RELAY LOGIC: If I am the Host, forward this to everyone else
-                if (this.isHostMode) {
-                    this.connections.forEach(otherConn => {
-                        // Don't send it back to the person who sent it
-                        if (otherConn.peer !== conn.peer && otherConn.open) {
-                            otherConn.send(data);
-                        }
-                    });
-                }
+                this.relay(data, conn);
                 break;
+            case 'GAME_SYNC':
+            case 'GAME_INPUT':
+            case 'PLAYLIST_SYNC':
+            case 'MSG_UPDATE':
+            case 'ROOM_SETTINGS':
+                window.dispatchEvent(new CustomEvent(`p2p_${data.type.toLowerCase()}`, { detail: data.payload }));
+                this.relay(data, conn);
+                break;
+        }
+    }
+
+    private relay(data: any, sourceConn: any) {
+        if (this.isHostMode) {
+            this.connections.forEach(otherConn => {
+                if (otherConn.peer !== sourceConn.peer && otherConn.open) {
+                    otherConn.send(data);
+                }
+            });
         }
     }
 
@@ -145,26 +150,24 @@ class P2PService {
         conn.send({ type: 'FRIEND_ACCEPT', user: this._user });
     }
 
-    // Host sends an invite to a friend
     async inviteToRoom(friendId: string, roomId: string) {
         if (!this.peer) return;
-        // Temporary connection just to send the invite packet
         const conn = this.peer.connect(friendId);
         conn.on('open', () => {
             conn.send({ type: 'ROOM_INVITE', user: this._user, roomId });
-            setTimeout(() => conn.close(), 1000); // Close after sending, we wait for them to connect back
+            setTimeout(() => conn.close(), 1000); 
         });
     }
 
-    // Guest connects to Host
     connectToRoom(hostId: string) {
-        this.disconnect(); // Close existing
-        this.isHostMode = false; // We are joining, so we are a guest
+        const existing = this.connections.find(c => c.peer === hostId);
+        if (existing && existing.open) return;
+
+        this.isHostMode = false;
         const conn = this.peer.connect(hostId);
         this.setupConnection(conn);
     }
 
-    // Send to ALL connected peers (Broadcast)
     send(data: any) {
         this.connections.forEach(conn => {
             if (conn.open) {
@@ -173,7 +176,6 @@ class P2PService {
         });
     }
 
-    // Close specific connection (kick or leave)
     disconnectPeer(peerId: string) {
         const conn = this.connections.find(c => c.peer === peerId);
         if (conn) {
@@ -190,7 +192,6 @@ class P2PService {
         this.emitConnections();
     }
     
-    // Fully reset for logout
     destroy() {
         this.disconnect();
         if (this.peer) {
