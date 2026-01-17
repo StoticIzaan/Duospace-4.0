@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Heart, Send, Gamepad2, LogOut, Plus, ArrowLeft, 
   Search, User as UserIcon, Zap, MessageCircle, Bell, UserPlus, 
-  CheckCircle2, Rocket, Waves, XCircle, Settings, Image as ImageIcon,
+  CheckCircle2, Rocket, Waves, XCircle, Settings,
   Mic, MicOff, Moon, Sun, ShieldCheck, Users, Palette, Radio, Share2,
   LayoutGrid, Users2, Trash2, Power, PlugZap
 } from 'lucide-react';
@@ -157,14 +157,10 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
 
     const handleAction = (req: any, index: number) => {
         if (req.type === 'friend') {
+            // Deprecated path: Friend requests are now auto-accepted in peerService
+            // This block is kept just in case of race conditions or old logic remnants, 
+            // but effectively logic is handled upstream.
             p2p.acceptFriend(req.conn);
-            const newFriend = { id: req.user.id, username: req.user.username, status: 'online' };
-            setFriends((prev: Friend[]) => {
-                if (prev.find(f => f.id === newFriend.id)) return prev;
-                const updated = [...prev, newFriend];
-                localStorage.setItem('duospace_friends_v5', JSON.stringify(updated));
-                return updated;
-            });
         } else {
             setActiveFriend(req.user);
             p2p.connectToRoom(req.user.id);
@@ -179,16 +175,27 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
     };
 
     const handleResumeSession = (peerId: string) => {
-        // Find friend object if possible
         const friend = friends.find((f: Friend) => f.id === peerId);
-        // If I am hosting, activeFriend stays null. If I am connected to someone, activeFriend is them.
-        // We need to know if we are Host or Guest for this session.
         if (p2p.isHostMode) {
-             setActiveFriend(null); // I am host
+             setActiveFriend(null); 
         } else {
              setActiveFriend(friend || { id: peerId, username: peerId, status: 'online' });
         }
         setView('room');
+    };
+
+    const handleRemoveFriend = (friendId: string) => {
+        if (confirm("Are you sure you want to remove this friend?")) {
+            setFriends((prev: Friend[]) => {
+                const updated = prev.filter(f => f.id !== friendId);
+                localStorage.setItem('duospace_friends_v5', JSON.stringify(updated));
+                return updated;
+            });
+            // Also kill connection if active
+            if (activeSessions.includes(friendId)) {
+                p2p.disconnectPeer(friendId);
+            }
+        }
     };
 
     return (
@@ -225,6 +232,13 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                                     </div>
                                 </div>
                             </div>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleRemoveFriend(f.id); }}
+                                className="p-2 md:p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                title="Remove Friend"
+                            >
+                                <Trash2 size={20} className="md:w-5 md:h-5"/>
+                            </button>
                         </Card>
                     ))}
                     {friends.length === 0 && <div className="text-center py-12 opacity-20"><Users size={48} className="mx-auto"/><p className="mt-2 text-xs font-black">No Friends</p></div>}
@@ -246,7 +260,7 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
             <main className={`${mobileTab === 'portal' || mobileTab === 'active' ? 'flex' : 'hidden'} md:flex flex-1 p-6 md:p-20 flex-col items-center justify-center relative bg-slate-100/50 dark:bg-slate-950/50 pb-24 md:pb-20 overflow-y-auto`}>
                 <div className="max-w-4xl w-full space-y-8 md:space-y-12">
                     
-                    {/* Active Sessions Tab View (Mobile specific logic or Integrated in Desktop) */}
+                    {/* Active Sessions Tab View */}
                     {(mobileTab === 'active' || (mobileTab === 'portal' && activeSessions.length > 0)) && (
                          <div className="space-y-4 animate-slide-up">
                             <div className="flex items-center gap-2 px-2">
@@ -257,7 +271,6 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                                 {activeSessions.map((peerId: string) => {
                                     const friend = friends.find((f: Friend) => f.id === peerId);
                                     const label = p2p.isHostMode ? `Hosting Network (${activeSessions.length} Peers)` : `Linked to: ${friend?.username || peerId}`;
-                                    // Deduplicate display if host
                                     if (p2p.isHostMode && peerId !== activeSessions[0]) return null;
                                     
                                     return (
@@ -402,7 +415,6 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
 }) => {
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState('');
-    const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isRecording, setIsRecording] = useState(false);
     const [showInvite, setShowInvite] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -429,10 +441,7 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
     useEffect(() => { scrollRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
     const handleSend = () => {
-        if (imagePreview) {
-            send('image', undefined, imagePreview);
-            setImagePreview(null);
-        } else if (input.trim()) {
+        if (input.trim()) {
             send('text', input);
         }
     };
@@ -498,18 +507,6 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
         }
     };
 
-    const onImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onloadend = () => {
-                setImagePreview(reader.result as string);
-                e.target.value = '';
-            };
-        }
-    };
-
     const handleInvite = (targetId: string) => {
         p2p.inviteToRoom(targetId, `room_${user.id}_${Date.now()}`);
         setShowInvite(false);
@@ -554,7 +551,6 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
                         <div className={`px-6 py-4 md:px-10 md:py-6 rounded-3xl md:rounded-[3rem] shadow-xl md:shadow-2xl max-w-[85%] md:max-w-3xl font-bold border-2 md:border-4 border-transparent ${m.sender_id === user.id ? 'bg-vibe text-white border-white/10' : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white dark:border-white/5'}`}>
                             {m.type === 'text' && <p className="text-lg md:text-2xl leading-relaxed whitespace-pre-wrap">{m.content}</p>}
                             {m.type === 'ai' && <p className="text-lg md:text-2xl leading-relaxed text-emerald-500 italic">{m.content}</p>}
-                            {m.type === 'image' && <img src={m.media_url} className="rounded-2xl md:rounded-3xl max-h-[300px] md:max-h-[500px] border-4 border-white/10" />}
                             {m.type === 'voice' && (
                                 <div className="flex items-center gap-3 md:gap-4 min-w-[200px] md:min-w-[300px]">
                                     <div className="w-10 h-10 md:w-12 md:h-12 bg-white/20 rounded-full flex items-center justify-center animate-pulse"><Radio size={20} className="md:w-6 md:h-6"/></div>
@@ -572,39 +568,24 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
             </div>
 
             <div className="p-4 md:p-12 border-t-4 dark:border-slate-800 shrink-0 bg-white/50 dark:bg-slate-900/50 backdrop-blur-2xl">
-                <Card className={`flex items-center gap-3 md:gap-6 !p-3 md:!p-4 shadow-2xl border-2 md:border-4 dark:border-white/10 !rounded-[2.5rem] md:!rounded-[3.5rem] bg-white dark:bg-slate-950 transition-all ${imagePreview ? 'flex-col items-stretch !rounded-[2rem]' : ''}`}>
-                    {imagePreview && (
-                        <div className="relative w-full h-40 md:h-60 rounded-3xl overflow-hidden border-4 border-white/10 bg-black/50 mb-2 group">
-                            <img src={imagePreview} className="w-full h-full object-contain" />
-                            <button onClick={() => setImagePreview(null)} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-rose-500 transition-colors">
-                                <XCircle size={24}/>
-                            </button>
-                        </div>
-                    )}
+                <Card className={`flex items-center gap-3 md:gap-6 !p-3 md:!p-4 shadow-2xl border-2 md:border-4 dark:border-white/10 !rounded-[2.5rem] md:!rounded-[3.5rem] bg-white dark:bg-slate-950 transition-all`}>
                     
                     <div className="flex items-center gap-3 md:gap-6 w-full">
                         <div className="flex gap-1 md:gap-2">
-                            <label className={`p-3 md:p-5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-all cursor-pointer ${imagePreview ? 'text-vibe' : 'text-slate-400 hover:text-vibe'}`}>
-                                <ImageIcon size={24} className="md:w-9 md:h-9"/>
-                                <input type="file" className="hidden" accept="image/*" onChange={onImageChange} />
-                            </label>
                             <button onClick={toggleRecording} className={`p-3 md:p-5 rounded-full transition-all ${isRecording ? 'bg-rose-500 text-white animate-pulse shadow-lg' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-vibe'}`}>
                                 {isRecording ? <MicOff size={24} className="md:w-9 md:h-9"/> : <Mic size={24} className="md:w-9 md:h-9"/>}
                             </button>
                         </div>
                         
-                        {!imagePreview && (
-                            <input 
-                                value={input} 
-                                onChange={e => setInput(e.target.value)} 
-                                onKeyDown={e => e.key === 'Enter' && handleSend()} 
-                                className="flex-1 bg-transparent outline-none font-black text-xl md:text-3xl px-2 md:px-6 placeholder:opacity-20 placeholder:text-slate-400 min-w-0" 
-                                placeholder="Signal..." 
-                            />
-                        )}
-                        {imagePreview && <div className="flex-1 text-slate-400 font-bold px-4 italic">Image attached...</div>}
+                        <input 
+                            value={input} 
+                            onChange={e => setInput(e.target.value)} 
+                            onKeyDown={e => e.key === 'Enter' && handleSend()} 
+                            className="flex-1 bg-transparent outline-none font-black text-xl md:text-3xl px-2 md:px-6 placeholder:opacity-20 placeholder:text-slate-400 min-w-0" 
+                            placeholder="Signal..." 
+                        />
                         
-                        <button onClick={handleSend} className={`w-14 h-14 md:w-20 md:h-20 bg-vibe text-white rounded-[1.5rem] md:rounded-[2rem] flex items-center justify-center shadow-2xl shadow-vibe/40 active:scale-90 transition-all hover:brightness-110 shrink-0 ${!input.trim() && !imagePreview ? 'opacity-50 grayscale' : ''}`}>
+                        <button onClick={handleSend} className={`w-14 h-14 md:w-20 md:h-20 bg-vibe text-white rounded-[1.5rem] md:rounded-[2rem] flex items-center justify-center shadow-2xl shadow-vibe/40 active:scale-90 transition-all hover:brightness-110 shrink-0 ${!input.trim() ? 'opacity-50 grayscale' : ''}`}>
                             <Send size={24} className="md:w-10 md:h-10"/>
                         </button>
                     </div>

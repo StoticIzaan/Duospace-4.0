@@ -97,7 +97,9 @@ class P2PService {
     private handleData(conn: any, data: any) {
         switch (data.type) {
             case 'FRIEND_REQ':
-                this.callbacks.onInbox({ type: 'friend', conn, user: data.user });
+                // Auto-accept friend requests for instant mutual connection
+                this.acceptFriend(conn);
+                this.callbacks.onFriendAdded(data.user);
                 break;
             case 'FRIEND_ACCEPT':
                 this.callbacks.onFriendAdded(data.user);
