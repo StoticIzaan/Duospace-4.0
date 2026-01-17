@@ -584,25 +584,44 @@ const Dashboard = ({ user, friends, inbox, onInboxAction, setView, setActiveFrie
 
 const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: { user: User, updateSettings: (s: any) => void, onClose: () => void, onLogout: () => void }) => {
     const themes: ThemeColor[] = ['violet', 'rose', 'emerald', 'sky', 'amber'];
+    const themeColors: Record<string, string> = {
+        violet: '#7c3aed',
+        rose: '#f43f5e',
+        emerald: '#10b981',
+        sky: '#0ea5e9',
+        amber: '#f59e0b'
+    };
+
+    const Toggle = ({ checked, onChange }: { checked: boolean, onChange: (v: boolean) => void }) => (
+        <button 
+            onClick={() => onChange(!checked)} 
+            className={`w-12 h-6 rounded-full relative transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-vibe ${checked ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+        >
+            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${checked ? 'left-7' : 'left-1'}`} />
+        </button>
+    );
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-end md:pr-0 bg-black/20 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-end md:pr-0 bg-black/40 backdrop-blur-sm animate-in fade-in">
              <div className="w-full md:w-[400px] h-full bg-white dark:bg-slate-950 border-l dark:border-slate-800 shadow-2xl p-6 overflow-y-auto animate-slide-left">
                 <div className="flex items-center justify-between mb-8">
                     <h2 className="text-2xl font-black tracking-tighter">Configuration</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-full"><XCircle/></button>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-full transition-colors"><XCircle/></button>
                 </div>
 
                 <div className="space-y-8">
                     <section>
                         <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Interface Theme</h3>
-                        <div className="flex gap-3">
+                        <div className="flex gap-4">
                             {themes.map(t => (
                                 <button 
                                     key={t}
                                     onClick={() => updateSettings({ theme: t })}
-                                    className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 ${user.settings.theme === t ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'}`}
-                                    style={{ backgroundColor: `var(--theme-${t}-primary)` }}
-                                />
+                                    className={`w-10 h-10 rounded-full transition-all duration-300 hover:scale-110 flex items-center justify-center ${user.settings.theme === t ? 'ring-4 ring-offset-2 ring-slate-300 dark:ring-slate-700 dark:ring-offset-slate-950 scale-110' : 'opacity-70 hover:opacity-100'}`}
+                                    style={{ backgroundColor: themeColors[t] }}
+                                >
+                                    {user.settings.theme === t && <CheckCircle2 size={16} className="text-white drop-shadow-md"/>}
+                                </button>
                             ))}
                         </div>
                     </section>
@@ -610,12 +629,12 @@ const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: { user: User
                     <section>
                          <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Display</h3>
                          <div className="space-y-3">
-                             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
+                             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-white/10 transition-colors">
                                  <div className="flex items-center gap-3">
-                                     <Moon size={20}/>
+                                     {user.settings.darkMode ? <Moon size={20} className="text-vibe-primary"/> : <Sun size={20} className="text-amber-500"/>}
                                      <span className="font-bold text-sm">Dark Mode</span>
                                  </div>
-                                 <input type="checkbox" checked={user.settings.darkMode} onChange={e => updateSettings({ darkMode: e.target.checked })} className="toggle" />
+                                 <Toggle checked={user.settings.darkMode} onChange={(v) => updateSettings({ darkMode: v })} />
                              </div>
                          </div>
                     </section>
@@ -623,19 +642,19 @@ const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: { user: User
                     <section>
                          <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Privacy</h3>
                          <div className="space-y-3">
-                             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
+                             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-white/10 transition-colors">
                                  <div className="flex items-center gap-3">
-                                     <Eye size={20}/>
+                                     <Eye size={20} className={user.settings.showLastSeen ? 'text-emerald-500' : 'text-slate-400'}/>
                                      <span className="font-bold text-sm">Last Seen</span>
                                  </div>
-                                 <input type="checkbox" checked={user.settings.showLastSeen} onChange={e => updateSettings({ showLastSeen: e.target.checked })} className="toggle" />
+                                 <Toggle checked={user.settings.showLastSeen} onChange={(v) => updateSettings({ showLastSeen: v })} />
                              </div>
-                             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
+                             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-white/10 transition-colors">
                                  <div className="flex items-center gap-3">
-                                     <CheckCircle2 size={20}/>
+                                     <CheckCircle2 size={20} className={user.settings.readReceipts ? 'text-emerald-500' : 'text-slate-400'}/>
                                      <span className="font-bold text-sm">Read Receipts</span>
                                  </div>
-                                 <input type="checkbox" checked={user.settings.readReceipts} onChange={e => updateSettings({ readReceipts: e.target.checked })} className="toggle" />
+                                 <Toggle checked={user.settings.readReceipts} onChange={(v) => updateSettings({ readReceipts: v })} />
                              </div>
                          </div>
                     </section>
@@ -647,7 +666,7 @@ const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: { user: User
                                  <button
                                     key={tone}
                                     onClick={() => updateSettings({ aiTone: tone })}
-                                    className={`p-3 rounded-xl border-2 font-bold text-sm capitalize transition-all ${user.settings.aiTone === tone ? 'border-vibe text-vibe bg-vibe-soft' : 'border-transparent bg-slate-50 dark:bg-slate-900'}`}
+                                    className={`p-4 rounded-xl border-2 font-bold text-sm capitalize transition-all duration-300 ${user.settings.aiTone === tone ? 'border-vibe text-vibe bg-vibe-soft' : 'border-transparent bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10'}`}
                                  >
                                      {tone}
                                  </button>
@@ -655,7 +674,7 @@ const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: { user: User
                          </div>
                     </section>
 
-                    <Button variant="danger" onClick={onLogout} className="w-full !py-4 mt-8">Disconnect Identity</Button>
+                    <Button variant="danger" onClick={onLogout} className="w-full !py-4 mt-8 !text-sm">Disconnect Identity</Button>
                 </div>
              </div>
         </div>
