@@ -62,15 +62,45 @@ const Toast = ({ message, onClose }: { message: string, onClose: () => void }) =
     </div>
 );
 
+const InboxModal = ({ inbox, onAction, onClose }: { inbox: any[], onAction: (req:any, idx:number) => void, onClose: () => void }) => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in">
+        <Card className="w-full max-w-sm !p-6 space-y-4 !rounded-2xl border-2 border-white/20 relative shadow-2xl bg-white dark:bg-slate-900">
+             <div className="flex items-center justify-between mb-2">
+                <h3 className="font-black text-lg flex items-center gap-2"><Bell size={20} className="text-emerald-500"/> Inbox</h3>
+                <button onClick={onClose}><XCircle size={20} className="text-slate-400 hover:text-rose-500"/></button>
+            </div>
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                {inbox.length === 0 ? (
+                    <p className="text-center text-slate-500 py-4 italic text-sm">No pending requests.</p>
+                ) : (
+                    inbox.map((req: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-slate-100 dark:bg-slate-800 rounded-xl animate-message-pop border border-transparent hover:border-vibe/20">
+                            <div>
+                                <p className="font-bold text-sm">{req.user.username}</p>
+                                <p className="text-[9px] uppercase font-black opacity-50">
+                                    {req.type === 'friend_request' ? 'Friend Request' : 'Room Invite'}
+                                </p>
+                            </div>
+                            <button onClick={() => onAction(req, i)} className={`px-3 py-1.5 text-white rounded-lg text-xs font-bold shadow-lg active:scale-95 transition-all ${req.type === 'friend_request' ? 'bg-emerald-500 shadow-emerald-500/30' : 'bg-vibe shadow-vibe/30'}`}>
+                                {req.type === 'friend_request' ? 'Accept' : 'Join'}
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
+        </Card>
+    </div>
+);
+
 const InviteModal = ({ onClose, friends, user }: { onClose: () => void, friends: Friend[], user: User }) => {
     const [code, setCode] = useState('');
     const [invitingId, setInvitingId] = useState<string | null>(null);
     const [sentIds, setSentIds] = useState<string[]>([]);
+    const [addStatus, setAddStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
     const handleInviteFriend = async (friendId: string) => {
         setInvitingId(friendId);
-        await p2p.inviteToRoom(friendId, user.id); // Send room ID as user ID for simple P2P
-        // Artificial delay for UI feedback
+        await p2p.inviteToRoom(friendId, user.id); 
         setTimeout(() => {
             setInvitingId(null);
             setSentIds(prev => [...prev, friendId]);
@@ -78,9 +108,14 @@ const InviteModal = ({ onClose, friends, user }: { onClose: () => void, friends:
     };
 
     const handleAddFriend = () => {
+        if (!code.trim()) return;
+        setAddStatus('loading');
         p2p.sendFriendRequest(code.trim());
-        // We close logic is handled by listener status usually, but for UX we can clear or keep open
-        setCode('');
+        setTimeout(() => {
+            setAddStatus('success');
+            setCode('');
+            setTimeout(() => setAddStatus('idle'), 2000);
+        }, 1500);
     };
 
     return (
@@ -100,7 +135,9 @@ const InviteModal = ({ onClose, friends, user }: { onClose: () => void, friends:
                         <h4 className="text-xs font-black uppercase text-slate-400 mb-3 flex items-center gap-2"><Users size={14}/> Your Circle</h4>
                         <div className="space-y-2">
                             {friends.length === 0 ? (
-                                <p className="text-sm text-slate-500 italic text-center py-4">No friends yet. Add one below!</p>
+                                <p className="text-sm text-slate-500 italic text-center py-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
+                                    No friends yet.<br/>Add a friend below using their Signal Code!
+                                </p>
                             ) : (
                                 friends.map(f => {
                                     const isSent = sentIds.includes(f.id);
@@ -145,10 +182,16 @@ const InviteModal = ({ onClose, friends, user }: { onClose: () => void, friends:
                                 placeholder="Enter Signal Code..." 
                                 className="!py-2.5 font-mono text-sm" 
                             />
-                            <Button onClick={handleAddFriend} disabled={!code.trim()} className="shrink-0 !py-2.5">Add</Button>
+                            <Button 
+                                onClick={handleAddFriend} 
+                                disabled={!code.trim() || addStatus === 'loading'} 
+                                className={`shrink-0 !py-2.5 min-w-[80px] ${addStatus === 'success' ? '!bg-emerald-500' : ''}`}
+                            >
+                                {addStatus === 'loading' ? <Loader2 size={16} className="animate-spin"/> : addStatus === 'success' ? <CheckCircle2 size={16}/> : 'Add'}
+                            </Button>
                         </div>
                         <p className="text-[10px] text-slate-400 mt-2 leading-tight">
-                            Enter a friend's Signal Code to add them to your circle. Once added, they will appear in the list above.
+                            Sending a request sends a notification to their Inbox. Once they accept, they will appear in your circle above.
                         </p>
                     </div>
                 </div>
@@ -183,7 +226,9 @@ const App = () => {
                 });
             },
             onStatus: setStatus,
-            onInbox: (req) => setInbox(prev => [...prev, req]),
+            onInbox: (req) => {
+                setInbox(prev => [...prev, req]);
+            },
             onConnectionsChanged: (conns) => setActiveSessions(conns),
             onFriendAdded: (f) => {
                 setFriends(prev => {
@@ -192,6 +237,8 @@ const App = () => {
                     localStorage.setItem('duospace_friends_v5', JSON.stringify(next));
                     return next;
                 });
+                setToast(`Friend added: ${f.username}`);
+                setTimeout(() => setToast(null), 3000);
             }
         });
         if (view === 'auth') setView('dash');
@@ -202,9 +249,7 @@ const App = () => {
   useEffect(() => {
       if (status === 'req_sent') {
           setToast("Request sent waiting for them to reply");
-          const t = setTimeout(() => {
-              setToast(null);
-          }, 3000);
+          const t = setTimeout(() => { setToast(null); }, 3000);
           return () => clearTimeout(t);
       }
       if (status === 'error') {
@@ -253,6 +298,18 @@ const App = () => {
       });
   };
 
+  // Shared Inbox Action Handler
+  const handleInboxAction = (req: any, index: number) => {
+      if (req.type === 'room') {
+          setActiveFriend(req.user);
+          p2p.connectToRoom(req.user.id);
+          setView('room');
+      } else if (req.type === 'friend_request') {
+          p2p.confirmFriendReq(req.user);
+      }
+      setInbox(prev => prev.filter((_, i) => i !== index));
+  };
+
   if (!user) return <Auth onLogin={setUser} />;
   
   return (
@@ -264,7 +321,7 @@ const App = () => {
                 user={user} 
                 friends={friends} 
                 inbox={inbox} 
-                setInbox={setInbox} 
+                onInboxAction={handleInboxAction} 
                 setView={setView} 
                 setActiveFriend={setActiveFriend}
                 updateSettings={updateUserSettings}
@@ -282,6 +339,8 @@ const App = () => {
                 friendsList={friends}
                 initialMessages={chatHistory[getCurrentSessionId()] || []}
                 onUpdateHistory={updateHistory}
+                inbox={inbox}
+                onInboxAction={handleInboxAction}
                 onBack={() => {
                     setView('dash');
                     setActiveFriend(null);
@@ -304,6 +363,7 @@ const App = () => {
   );
 };
 
+// ... Auth Component (Unchanged) ...
 const Auth = ({ onLogin }: { onLogin: (u: User) => void }) => {
     const [name, setName] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -354,21 +414,11 @@ const Auth = ({ onLogin }: { onLogin: (u: User) => void }) => {
     );
 };
 
-const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, updateSettings, setFriends, onLogout, activeSessions, isHostingSession, setIsHostingSession }: any) => {
+// ... Dashboard Component ...
+const Dashboard = ({ user, friends, inbox, onInboxAction, setView, setActiveFriend, updateSettings, setFriends, onLogout, activeSessions, isHostingSession, setIsHostingSession }: any) => {
     const [search, setSearch] = useState('');
     const [showSettings, setShowSettings] = useState(false);
     const [mobileTab, setMobileTab] = useState<'portal' | 'friends'>('portal');
-
-    const handleAction = (req: any, index: number) => {
-        if (req.type === 'room') {
-            setActiveFriend(req.user);
-            p2p.connectToRoom(req.user.id);
-            setView('room');
-        } else if (req.type === 'friend_request') {
-            p2p.confirmFriendReq(req.user);
-        }
-        setInbox(inbox.filter((_: any, i: number) => i !== index));
-    };
 
     const handleRemoveFriend = (friendId: string) => {
         if (confirm("Remove friend?")) {
@@ -510,7 +560,7 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                                                 {req.type === 'friend_request' ? 'Friend Request' : 'Room Invite'}
                                             </p>
                                         </div>
-                                        <button onClick={() => handleAction(req, i)} className={`p-2 text-white rounded-lg ${req.type === 'friend_request' ? 'bg-emerald-500' : 'bg-vibe'}`}>
+                                        <button onClick={() => onInboxAction(req, i)} className={`p-2 text-white rounded-lg ${req.type === 'friend_request' ? 'bg-emerald-500' : 'bg-vibe'}`}>
                                             {req.type === 'friend_request' ? <UserPlus size={14}/> : <CheckCircle2 size={14} />}
                                         </button>
                                     </div>
@@ -532,330 +582,316 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
     );
 };
 
-const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: any) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in">
-        <Card className="w-full max-w-lg !p-8 space-y-6 relative !rounded-2xl border-4 border-white/10 shadow-2xl">
-            <button onClick={onClose} className="absolute top-6 right-6 text-slate-400 hover:text-rose-500"><XCircle size={24}/></button>
-            <h2 className="text-3xl font-black tracking-tighter">Core Config</h2>
-            <div className="space-y-4">
-                <button onClick={() => updateSettings({ darkMode: !user.settings.darkMode })} className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${user.settings.darkMode ? 'bg-slate-900 border-vibe text-white' : 'bg-white border-slate-100'}`}>
-                    <div className="flex items-center gap-3">{user.settings.darkMode ? <Moon size={20}/> : <Sun size={20}/>}<span className="font-bold">Dark Mode</span></div>
-                    <div className={`w-10 h-5 rounded-full relative ${user.settings.darkMode ? 'bg-vibe' : 'bg-slate-200'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${user.settings.darkMode ? 'left-6' : 'left-1'}`}></div></div>
-                </button>
-                <div className="flex gap-2 justify-center">
-                    {(['violet', 'rose', 'emerald', 'sky', 'amber'] as ThemeColor[]).map(c => (
-                        <button key={c} onClick={() => updateSettings({ theme: c })} className={`w-10 h-10 rounded-xl bg-${c === 'violet' ? 'violet' : c}-500 ${user.settings.theme === c ? 'ring-4 ring-white/20 scale-110' : ''}`} />
-                    ))}
-                </div>
-            </div>
-            <Button onClick={onLogout} variant="danger" className="w-full !py-4 !rounded-xl"><Power className="mr-2" size={16}/> Disconnect</Button>
-        </Card>
-    </div>
-);
-
-const PongGame = ({ isHost, p1Name, p2Name, onClose }: { isHost: boolean, p1Name: string, p2Name: string, onClose: () => void }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [gameState, setGameState] = useState<PongState>({ 
-        ball: { x: 300, y: 200, dx: 4, dy: 4 }, p1Y: 150, p2Y: 150, 
-        score: { p1: 0, p2: 0 }, gameStatus: 'intro', countdown: 3 
-    });
-    const keysPressed = useRef({ up: false, down: false });
-
-    useEffect(() => {
-        const handleSync = (e: any) => !isHost && setGameState(e.detail);
-        window.addEventListener('p2p_game_sync', handleSync);
-        return () => window.removeEventListener('p2p_game_sync', handleSync);
-    }, [isHost]);
-
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'ArrowUp') keysPressed.current.up = true;
-            if (e.key === 'ArrowDown') keysPressed.current.down = true;
-        };
-        const handleKeyUp = (e: KeyboardEvent) => {
-             if (e.key === 'ArrowUp') keysPressed.current.up = false;
-             if (e.key === 'ArrowDown') keysPressed.current.down = false;
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('keyup', handleKeyUp);
-        return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-            window.removeEventListener('keyup', handleKeyUp);
-        };
-    }, []);
-
-    // Input Loop
-    useEffect(() => {
-        let animationFrameId: number;
-        const processInput = () => {
-             if (keysPressed.current.up || keysPressed.current.down) {
-                 setGameState(prev => {
-                     const currentY = isHost ? prev.p1Y : prev.p2Y;
-                     let nextY = currentY;
-                     // Speed of paddle movement (approx 8px per frame)
-                     if (keysPressed.current.up) nextY -= 8;
-                     if (keysPressed.current.down) nextY += 8;
-                     
-                     const boundedY = Math.max(0, Math.min(340, nextY));
-                     
-                     if (isHost) {
-                         return { ...prev, p1Y: boundedY };
-                     } else {
-                         // As guest, we optimize by updating local state for smoothness, but send payload
-                         // Note: In real production, we'd want to throttle sends, but for P2P LAN/Fast net it's okay
-                         p2p.send({ type: 'GAME_INPUT', payload: { y: boundedY } });
-                         return { ...prev, p2Y: boundedY };
-                     }
-                 });
-             }
-             animationFrameId = requestAnimationFrame(processInput);
-        };
-        processInput();
-        return () => cancelAnimationFrame(animationFrameId);
-    }, [isHost]);
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-        // Keep drag support as fallback
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (rect && isHost) setGameState(prev => ({ ...prev, p1Y: Math.max(0, Math.min(340, e.touches[0].clientY - rect.top - 30)) }));
-        else if (rect) p2p.send({ type: 'GAME_INPUT', payload: { y: Math.max(0, Math.min(340, e.touches[0].clientY - rect.top - 30)) } });
-    };
-
-    // Render 
-    useEffect(() => {
-        if (!canvasRef.current) return;
-        const ctx = canvasRef.current.getContext('2d');
-        if (!ctx) return;
-
-        ctx.fillStyle = '#1e293b'; 
-        ctx.fillRect(0, 0, 600, 400);
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '40px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(gameState.score.p1.toString(), 150, 50);
-        ctx.fillText(gameState.score.p2.toString(), 450, 50);
-        
-        ctx.font = '12px sans-serif';
-        ctx.fillText(p1Name, 150, 380);
-        ctx.fillText(p2Name, 450, 380);
-
-        ctx.fillRect(0, 0, 600, 4); 
-        ctx.fillRect(0, 396, 600, 4); 
-        for(let i=0; i<400; i+=20) ctx.fillRect(298, i, 4, 10); 
-
-        ctx.fillStyle = '#34d399'; ctx.fillRect(20, gameState.p1Y, 10, 60);
-        ctx.fillStyle = '#f43f5e'; ctx.fillRect(570, gameState.p2Y, 10, 60);
-
-        if (gameState.gameStatus === 'playing') {
-             ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(gameState.ball.x, gameState.ball.y, 6, 0, Math.PI * 2); ctx.fill();
-        }
-    }, [gameState, p1Name, p2Name]);
-
-    // Host Logic Loop (Ball movement)
-    useEffect(() => {
-        if (!isHost) return;
-        let animId: number;
-        let interval: any;
-
-        const loop = () => {
-            setGameState(prev => {
-                if (prev.gameStatus !== 'playing') return prev;
-                let { x, y, dx, dy } = prev.ball;
-                let { p1, p2 } = prev.score;
-                let status = prev.gameStatus;
-                let winner = prev.winner;
-
-                x += dx; y += dy;
-                if (y <= 10 || y >= 390) dy *= -1;
-
-                if (x <= 35 && y >= prev.p1Y && y <= prev.p1Y + 60) { dx *= -1; x = 35; dx *= 1.05; }
-                if (x >= 565 && y >= prev.p2Y && y <= prev.p2Y + 60) { dx *= -1; x = 565; dx *= 1.05; }
-
-                if (x < 0) { p2++; x = 300; y = 200; dx = 4; dy = 4; }
-                if (x > 600) { p1++; x = 300; y = 200; dx = -4; dy = 4; }
-
-                if (p1 >= 5) { status = 'ended'; winner = 'host'; }
-                if (p2 >= 5) { status = 'ended'; winner = 'guest'; }
-
-                const next = { ...prev, ball: { x, y, dx, dy }, score: { p1, p2 }, gameStatus: status, winner };
-                p2p.send({ type: 'GAME_SYNC', payload: next });
-                return next;
-            });
-            animId = requestAnimationFrame(loop);
-        };
-
-        if (gameState.gameStatus === 'intro') {
-             setTimeout(() => setGameState(p => { const n = {...p, gameStatus: 'countdown'}; p2p.send({type:'GAME_SYNC', payload: n}); return n; }), 3000);
-        } else if (gameState.gameStatus === 'countdown') {
-             interval = setInterval(() => {
-                 setGameState(prev => {
-                     const nextC = prev.countdown - 1;
-                     const nextS = nextC <= 0 ? 'playing' : 'countdown';
-                     const n = { ...prev, countdown: nextC, gameStatus: nextS };
-                     p2p.send({ type: 'GAME_SYNC', payload: n });
-                     if (nextS === 'playing') clearInterval(interval);
-                     return n;
-                 });
-             }, 1000);
-        } else if (gameState.gameStatus === 'playing') {
-            animId = requestAnimationFrame(loop);
-        } else if (gameState.gameStatus === 'ended') {
-            setTimeout(onClose, 3000);
-        }
-
-        return () => { cancelAnimationFrame(animId); clearInterval(interval); }
-    }, [isHost, gameState.gameStatus]);
-
+const SettingsPanel = ({ user, updateSettings, onClose, onLogout }: { user: User, updateSettings: (s: any) => void, onClose: () => void, onLogout: () => void }) => {
+    const themes: ThemeColor[] = ['violet', 'rose', 'emerald', 'sky', 'amber'];
     return (
-        <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
-            <div className="relative w-full h-full flex items-center justify-center p-4">
-                <div className="w-full max-w-4xl aspect-[3/2] relative shadow-2xl rounded-xl overflow-hidden border-2 border-white/10 group">
-                    <canvas 
-                        ref={canvasRef} width={600} height={400} 
-                        className="w-full h-full bg-slate-900 touch-none cursor-none block"
-                        onTouchMove={handleTouchMove}
-                    />
-                    
-                    {/* Visual Controls for Mobile - Always visible or only on touch devices? Let's make them visible but subtle */}
-                    <div className="absolute right-4 bottom-4 flex flex-col gap-4 z-10 md:opacity-20 hover:opacity-100 transition-opacity">
-                        <button 
-                            className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center active:bg-white/30 backdrop-blur-sm"
-                            onTouchStart={(e) => { e.preventDefault(); keysPressed.current.up = true; }}
-                            onTouchEnd={(e) => { e.preventDefault(); keysPressed.current.up = false; }}
-                            onMouseDown={() => keysPressed.current.up = true}
-                            onMouseUp={() => keysPressed.current.up = false}
-                        >
-                            <ChevronUp className="text-white w-8 h-8" />
-                        </button>
-                        <button 
-                            className="w-16 h-16 rounded-full bg-white/10 border border-white/20 flex items-center justify-center active:bg-white/30 backdrop-blur-sm"
-                            onTouchStart={(e) => { e.preventDefault(); keysPressed.current.down = true; }}
-                            onTouchEnd={(e) => { e.preventDefault(); keysPressed.current.down = false; }}
-                            onMouseDown={() => keysPressed.current.down = true}
-                            onMouseUp={() => keysPressed.current.down = false}
-                        >
-                            <ChevronDown className="text-white w-8 h-8" />
-                        </button>
-                    </div>
-
-                    {gameState.gameStatus === 'intro' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-none animate-in fade-in zoom-in z-20">
-                            <div className="text-white text-center">
-                                <h3 className="text-4xl font-black mb-4 text-vibe-primary">MINI PONG</h3>
-                                <p className="text-xl font-bold">USE ARROW KEYS OR BUTTONS TO PLAY</p>
-                                <p className="mt-4 text-xs opacity-50 uppercase tracking-widest">First to 5 wins</p>
-                            </div>
-                        </div>
-                    )}
-
-                    {gameState.gameStatus === 'countdown' && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                            <span className="text-8xl font-black text-white animate-pulse">{gameState.countdown}</span>
-                        </div>
-                    )}
-
-                    {gameState.gameStatus === 'ended' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-none animate-in fade-in z-20">
-                            <div className="text-white text-center">
-                                <Trophy size={64} className="mx-auto text-yellow-400 mb-4 animate-bounce" />
-                                <h3 className="text-4xl font-black mb-2">{gameState.winner === 'host' ? p1Name : p2Name} WINS!</h3>
-                                <p className="text-sm opacity-50">Returning to chat...</p>
-                            </div>
-                        </div>
-                    )}
+        <div className="fixed inset-0 z-50 flex items-center justify-end md:pr-0 bg-black/20 backdrop-blur-sm animate-in fade-in">
+             <div className="w-full md:w-[400px] h-full bg-white dark:bg-slate-950 border-l dark:border-slate-800 shadow-2xl p-6 overflow-y-auto animate-slide-left">
+                <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-2xl font-black tracking-tighter">Configuration</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-full"><XCircle/></button>
                 </div>
-            </div>
+
+                <div className="space-y-8">
+                    <section>
+                        <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Interface Theme</h3>
+                        <div className="flex gap-3">
+                            {themes.map(t => (
+                                <button 
+                                    key={t}
+                                    onClick={() => updateSettings({ theme: t })}
+                                    className={`w-10 h-10 rounded-full border-2 transition-all hover:scale-110 ${user.settings.theme === t ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'}`}
+                                    style={{ backgroundColor: `var(--theme-${t}-primary)` }}
+                                />
+                            ))}
+                        </div>
+                    </section>
+
+                    <section>
+                         <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Display</h3>
+                         <div className="space-y-3">
+                             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
+                                 <div className="flex items-center gap-3">
+                                     <Moon size={20}/>
+                                     <span className="font-bold text-sm">Dark Mode</span>
+                                 </div>
+                                 <input type="checkbox" checked={user.settings.darkMode} onChange={e => updateSettings({ darkMode: e.target.checked })} className="toggle" />
+                             </div>
+                         </div>
+                    </section>
+
+                    <section>
+                         <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Privacy</h3>
+                         <div className="space-y-3">
+                             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
+                                 <div className="flex items-center gap-3">
+                                     <Eye size={20}/>
+                                     <span className="font-bold text-sm">Last Seen</span>
+                                 </div>
+                                 <input type="checkbox" checked={user.settings.showLastSeen} onChange={e => updateSettings({ showLastSeen: e.target.checked })} className="toggle" />
+                             </div>
+                             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
+                                 <div className="flex items-center gap-3">
+                                     <CheckCircle2 size={20}/>
+                                     <span className="font-bold text-sm">Read Receipts</span>
+                                 </div>
+                                 <input type="checkbox" checked={user.settings.readReceipts} onChange={e => updateSettings({ readReceipts: e.target.checked })} className="toggle" />
+                             </div>
+                         </div>
+                    </section>
+                    
+                    <section>
+                         <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">AI Personality</h3>
+                         <div className="grid grid-cols-2 gap-3">
+                             {['playful', 'serious'].map((tone) => (
+                                 <button
+                                    key={tone}
+                                    onClick={() => updateSettings({ aiTone: tone })}
+                                    className={`p-3 rounded-xl border-2 font-bold text-sm capitalize transition-all ${user.settings.aiTone === tone ? 'border-vibe text-vibe bg-vibe-soft' : 'border-transparent bg-slate-50 dark:bg-slate-900'}`}
+                                 >
+                                     {tone}
+                                 </button>
+                             ))}
+                         </div>
+                    </section>
+
+                    <Button variant="danger" onClick={onLogout} className="w-full !py-4 mt-8">Disconnect Identity</Button>
+                </div>
+             </div>
         </div>
     );
 };
 
-const MusicPanel = ({ onClose, playlist, onUpdatePlaylist, user }: any) => {
-    const [input, setInput] = useState('');
-    const [generated, setGenerated] = useState<any>(null);
+const PongGame = ({ isHost, p1Name, p2Name, onClose }: any) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [score, setScore] = useState({ p1: 0, p2: 0 });
+    const [status, setStatus] = useState('waiting');
+    
+    // Game State Refs (for loop)
+    const state = useRef<PongState>({
+        ball: { x: 300, y: 200, dx: 5, dy: 5 },
+        p1Y: 150, p2Y: 150,
+        score: { p1: 0, p2: 0 },
+        gameStatus: 'intro',
+        countdown: 3
+    });
 
-    const handleGenerate = () => {
-        const meta = getLinkMetadata(input);
-        if (meta) setGenerated(meta);
-        setInput('');
-    };
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!canvas || !ctx) return;
+
+        let animationId: number;
+        
+        // Host Input Handlers
+        const handleHostInput = (e: any) => { state.current.p2Y = e.detail.p2Y; };
+        // Guest Sync Handler
+        const handleSync = (e: any) => {
+            if (!isHost) {
+                state.current = { ...state.current, ...e.detail };
+                setScore(e.detail.score);
+                setStatus(e.detail.gameStatus);
+                if (e.detail.gameStatus === 'ended') onClose();
+            }
+        };
+
+        if (isHost) {
+            window.addEventListener('p2p_game_host_input', handleHostInput);
+        } else {
+            window.addEventListener('p2p_game_sync', handleSync);
+        }
+
+        const update = () => {
+            if (isHost && state.current.gameStatus === 'playing') {
+                // Physics
+                let { ball, p1Y, p2Y } = state.current;
+                ball.x += ball.dx;
+                ball.y += ball.dy;
+
+                // Walls
+                if (ball.y <= 0 || ball.y >= 400) ball.dy *= -1;
+
+                // Paddles (p1 is left, p2 is right)
+                if (ball.x <= 20 && ball.y >= p1Y && ball.y <= p1Y + 100) {
+                    ball.dx *= -1.1; ball.x = 20;
+                }
+                if (ball.x >= 580 && ball.y >= p2Y && ball.y <= p2Y + 100) {
+                    ball.dx *= -1.1; ball.x = 580;
+                }
+
+                // Score
+                if (ball.x < 0) {
+                    state.current.score.p2++;
+                    resetBall();
+                } else if (ball.x > 600) {
+                    state.current.score.p1++;
+                    resetBall();
+                }
+                
+                // Win condition
+                if (state.current.score.p1 >= 5 || state.current.score.p2 >= 5) {
+                    state.current.gameStatus = 'ended';
+                }
+
+                // Sync
+                p2p.send({ type: 'GAME_SYNC', payload: state.current });
+                setScore({ ...state.current.score });
+            }
+
+            draw();
+            animationId = requestAnimationFrame(update);
+        };
+
+        const resetBall = () => {
+            state.current.ball = { x: 300, y: 200, dx: (Math.random() > 0.5 ? 5 : -5), dy: (Math.random() > 0.5 ? 5 : -5) };
+        };
+
+        const draw = () => {
+            // Draw logic
+            ctx.fillStyle = '#0f172a'; // dark bg
+            ctx.fillRect(0, 0, 600, 400);
+            
+            // Net
+            ctx.setLineDash([10, 15]);
+            ctx.beginPath(); ctx.moveTo(300, 0); ctx.lineTo(300, 400);
+            ctx.strokeStyle = '#334155'; ctx.stroke();
+
+            // Ball
+            ctx.beginPath(); ctx.arc(state.current.ball.x, state.current.ball.y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = '#10b981'; ctx.fill();
+
+            // Paddles
+            ctx.fillStyle = '#6366f1'; // p1 indigo
+            ctx.fillRect(10, state.current.p1Y, 10, 100);
+            ctx.fillStyle = '#f43f5e'; // p2 rose
+            ctx.fillRect(580, state.current.p2Y, 10, 100);
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const rect = canvas.getBoundingClientRect();
+            const y = e.clientY - rect.top - 50; // center paddle
+            // Clamp
+            const clampedY = Math.max(0, Math.min(300, y));
+
+            if (isHost) {
+                state.current.p1Y = clampedY;
+            } else {
+                // Send to host
+                p2p.send({ type: 'GAME_INPUT', payload: { p2Y: clampedY } });
+            }
+        };
+
+        canvas.addEventListener('mousemove', handleMouseMove);
+        if (isHost && state.current.gameStatus === 'intro') {
+            state.current.gameStatus = 'playing'; // Simplify start for now
+            update(); 
+        } else if (!isHost) {
+            update(); // Start loop for guest (rendering only)
+        }
+
+        return () => {
+            cancelAnimationFrame(animationId);
+            window.removeEventListener('p2p_game_host_input', handleHostInput);
+            window.removeEventListener('p2p_game_sync', handleSync);
+            canvas.removeEventListener('mousemove', handleMouseMove);
+        };
+    }, [isHost]);
 
     return (
-        <div className="h-full flex flex-col p-4 bg-white dark:bg-slate-900 border-t dark:border-white/5 shadow-2xl animate-slide-up">
-             <div className="flex items-center justify-between mb-4 shrink-0">
-                <h3 className="font-black text-lg flex items-center gap-2"><Music2 size={20}/> Music Hub</h3>
-                <button onClick={onClose}><XCircle size={20} className="text-slate-400 hover:text-rose-500"/></button>
-            </div>
-            
-            <div className="flex gap-2 mb-4 shrink-0">
-                 <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Paste Link..." className="!rounded-xl" />
-                 <Button onClick={handleGenerate} disabled={!input}><Plus size={16}/></Button>
-            </div>
-
-            {generated && (
-                 <div className="mb-4 shrink-0 animate-in zoom-in">
-                     <MusicCard {...generated} onAddToPlaylist={() => {
-                         const newItem: PlaylistItem = { 
-                             id: Date.now().toString(), url: generated.url, title: `${generated.type} Track`, 
-                             platform: generated.type, addedBy: user.username, ...generated 
-                         };
-                         onUpdatePlaylist([...playlist.items, newItem]);
-                         setGenerated(null);
-                     }} />
+        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4">
+             <div className="mb-4 flex items-center justify-between w-full max-w-[600px] text-white">
+                 <div className="flex flex-col items-start">
+                     <span className="text-xs font-black uppercase text-indigo-500">{p1Name}</span>
+                     <span className="text-4xl font-black">{score.p1}</span>
                  </div>
-            )}
-
-            <div className="flex-1 overflow-y-auto space-y-2 no-scrollbar border-t dark:border-white/5 pt-4">
-                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Shared Playlist</h4>
-                 {playlist.items.map((item: any, i: number) => (
-                    <div key={i} className="flex gap-2 p-2 bg-slate-50 dark:bg-white/5 rounded-lg group">
-                        <div className="w-8 h-8 bg-slate-200 rounded flex items-center justify-center shrink-0 text-[10px] font-black uppercase">{item.platform[0]}</div>
-                        <div className="min-w-0 flex-1">
-                            <p className="font-bold text-xs truncate">{item.title}</p>
-                            <p className="text-[9px] opacity-40 truncate">By {item.addedBy}</p>
-                        </div>
-                        <a href={item.url} target="_blank" className="p-1.5 hover:bg-emerald-500 hover:text-white rounded transition-colors"><Play size={10}/></a>
-                    </div>
-                 ))}
-                 {playlist.items.length === 0 && <p className="text-center text-xs opacity-30 mt-4">No tracks added</p>}
-            </div>
+                 <div className="text-2xl font-black tracking-widest opacity-20">VS</div>
+                 <div className="flex flex-col items-end">
+                     <span className="text-xs font-black uppercase text-rose-500">{p2Name}</span>
+                     <span className="text-4xl font-black">{score.p2}</span>
+                 </div>
+             </div>
+             <canvas 
+                ref={canvasRef} width={600} height={400} 
+                className="w-full max-w-[600px] bg-slate-900 rounded-xl shadow-2xl border border-white/10 touch-none cursor-none"
+             />
+             <Button onClick={onClose} variant="secondary" className="mt-8">Exit Game</Button>
         </div>
+    );
+};
+
+const MusicPanel = ({ user, playlist, onUpdatePlaylist, onClose }: any) => {
+    const [link, setLink] = useState('');
+    const handleAdd = () => {
+        const meta = getLinkMetadata(link);
+        if (meta) {
+            const item: PlaylistItem = {
+                id: Date.now().toString(),
+                url: meta.url,
+                title: `${meta.type} Track`,
+                platform: meta.type,
+                addedBy: user.username,
+                thumbnail: meta.id ? `https://img.youtube.com/vi/${meta.id}/0.jpg` : undefined
+            };
+            onUpdatePlaylist([...playlist.items, item]);
+            setLink('');
+        }
+    };
+    
+    return (
+        <Card className="h-full !p-0 flex flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t dark:border-white/10 rounded-b-none rounded-t-2xl shadow-2xl animate-slide-up">
+            <div className="p-3 border-b dark:border-white/5 flex items-center justify-between shrink-0">
+                <h3 className="font-black flex items-center gap-2"><Music2 size={16}/> Shared Queue</h3>
+                <button onClick={onClose}><ChevronDown/></button>
+            </div>
+            <div className="p-3 bg-slate-50 dark:bg-black/20 shrink-0">
+                 <div className="flex gap-2">
+                     <Input value={link} onChange={e => setLink(e.target.value)} placeholder="Paste YouTube/Spotify link..." className="!py-2 !text-xs" />
+                     <Button onClick={handleAdd} disabled={!link} className="!py-2 !px-3"><Plus size={16}/></Button>
+                 </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {playlist.items.length === 0 ? <p className="text-center text-slate-400 text-xs py-8">Queue is empty.</p> : playlist.items.map((item: PlaylistItem, i: number) => (
+                    <div key={item.id} className="flex items-center gap-2 group">
+                         <div className="flex-1">
+                             <MusicCard url={item.url} type={item.platform} id={item.platform === 'youtube' ? item.url.match(/(?:v=|be\/)([\w-]{11})/)?.[1] : undefined} onAddToPlaylist={() => {}} />
+                         </div>
+                         <button onClick={() => onUpdatePlaylist(playlist.items.filter((_:any, idx:number) => idx !== i))} className="p-2 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100"><XCircle size={16}/></button>
+                    </div>
+                ))}
+            </div>
+        </Card>
     );
 };
 
 const SettingsDrawer = ({ settings, toggleSetting, onLeave, onClose }: any) => (
-    <div className="h-full flex flex-col p-4 bg-white dark:bg-slate-900 border-t dark:border-white/5 shadow-2xl animate-slide-up">
-        <div className="flex items-center justify-between mb-6 shrink-0">
-            <h3 className="font-black text-lg flex items-center gap-2"><Settings size={20}/> Config</h3>
-            <button onClick={onClose}><XCircle size={20} className="text-slate-400 hover:text-rose-500"/></button>
+    <Card className="h-full !p-4 flex flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t dark:border-white/10 rounded-b-none rounded-t-2xl shadow-2xl animate-slide-up">
+        <div className="flex items-center justify-between mb-4">
+             <h3 className="font-black flex items-center gap-2"><Settings size={16}/> Room Settings</h3>
+             <button onClick={onClose}><ChevronDown/></button>
         </div>
-        <div className="space-y-3 flex-1 overflow-y-auto">
-            {[
-                { k: 'aiEnabled', l: 'Duo AI', i: <Zap size={16}/> },
-                { k: 'showLastSeen', l: 'Last Seen', i: <Eye size={16}/> },
-                { k: 'readReceipts', l: 'Read Receipts', i: <CheckCircle2 size={16}/> },
-                { k: 'themeSync', l: 'Theme Sync', i: <Palette size={16}/> }
-            ].map((s: any) => (
-                <label key={s.k} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/5 cursor-pointer">
-                    <div className="flex items-center gap-3 text-sm font-bold">{s.i} {s.l}</div>
-                    <div onClick={() => toggleSetting(s.k)} className={`w-10 h-6 rounded-full relative transition-colors ${settings[s.k] ? 'bg-vibe' : 'bg-slate-300'}`}>
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings[s.k] ? 'left-5' : 'left-1'}`}/>
-                    </div>
-                </label>
-            ))}
+        <div className="space-y-2">
+             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-white/5 rounded-xl">
+                 <div className="flex items-center gap-2"><Zap size={16}/><span className="font-bold text-xs">AI Assistant</span></div>
+                 <button onClick={() => toggleSetting('aiEnabled')} className={`w-8 h-4 rounded-full transition-colors relative ${settings.aiEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}><div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${settings.aiEnabled ? 'left-4.5' : 'left-0.5'}`} /></button>
+             </div>
+             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-white/5 rounded-xl">
+                 <div className="flex items-center gap-2"><Palette size={16}/><span className="font-bold text-xs">Sync Theme</span></div>
+                  <button onClick={() => toggleSetting('themeSync')} className={`w-8 h-4 rounded-full transition-colors relative ${settings.themeSync ? 'bg-emerald-500' : 'bg-slate-300'}`}><div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${settings.themeSync ? 'left-4.5' : 'left-0.5'}`} /></button>
+             </div>
         </div>
-        <div className="mt-4 pt-4 border-t dark:border-white/5 shrink-0">
-            <Button onClick={onLeave} variant="danger" className="w-full !py-3 !text-sm !rounded-xl"><LogOut size={16}/> End Session</Button>
+        <div className="mt-auto">
+            <Button variant="danger" onClick={onLeave} className="w-full">Leave Room</Button>
         </div>
-    </div>
+    </Card>
 );
 
-const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHistory, onLeave }: any) => {
+const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHistory, onLeave, inbox, onInboxAction }: any) => {
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState('');
     const [gameActive, setGameActive] = useState(false);
     const [showSketch, setShowSketch] = useState(false);
-    const [showAddFriend, setShowAddFriend] = useState(false); // New state for modal
+    const [showAddFriend, setShowAddFriend] = useState(false);
+    const [showInbox, setShowInbox] = useState(false);
     
     // Voice & Media
     const [recording, setRecording] = useState(false);
@@ -1023,14 +1059,23 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
                          <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span><span className="text-[9px] font-black uppercase opacity-40">Live</span></div>
                     </div>
                 </div>
-                {/* New Add Friend Button in Room Header */}
-                <button 
-                    onClick={() => setShowAddFriend(true)} 
-                    className="p-2 bg-slate-100 dark:bg-white/5 hover:bg-emerald-500 hover:text-white rounded-xl transition-colors text-slate-500"
-                    title="Add Friend"
-                >
-                    <UserPlus size={20}/>
-                </button>
+                {/* Room Actions */}
+                <div className="flex items-center gap-1">
+                    <button 
+                        onClick={() => setShowInbox(true)}
+                        className="p-2 relative hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-500"
+                    >
+                        <Bell size={20}/>
+                        {inbox.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full animate-pulse border border-white dark:border-slate-900"></span>}
+                    </button>
+                    <button 
+                        onClick={() => setShowAddFriend(true)} 
+                        className="p-2 bg-slate-100 dark:bg-white/5 hover:bg-emerald-500 hover:text-white rounded-xl transition-colors text-slate-500"
+                        title="Add Friend"
+                    >
+                        <UserPlus size={20}/>
+                    </button>
+                </div>
             </header>
 
             {/* Chat Area */}
@@ -1154,11 +1199,11 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
             {gameActive && <PongGame isHost={isHost} p1Name={isHost ? user.username : friend?.username} p2Name={!isHost ? user.username : friend?.username} onClose={() => { setGameActive(false); if(isHost) p2p.send({ type: 'GAME_SYNC', payload: { gameStatus: 'ended' }}); }} />}
             {showSketch && <Sketchpad onSend={(blob) => send('image', undefined, blob)} onClose={() => setShowSketch(false)} />}
             {showAddFriend && <InviteModal friends={friendsList} user={user} onClose={() => setShowAddFriend(false)} />}
+            {showInbox && <InboxModal inbox={inbox} onAction={(req: any, i: number) => { onInboxAction(req, i); setShowInbox(false); }} onClose={() => setShowInbox(false)} />}
         </div>
     );
 };
 
-// ... Sketchpad and MusicCard Components remain unchanged, just need to be included in file ...
 const Sketchpad = ({ onSend, onClose }: { onSend: (blob: string) => void, onClose: () => void }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
