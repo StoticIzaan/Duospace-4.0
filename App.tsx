@@ -51,11 +51,13 @@ const getLinkMetadata = (text: string): { url: string, type: 'youtube' | 'spotif
 
 // --- COMPONENTS ---
 const Toast = ({ message, onClose }: { message: string, onClose: () => void }) => (
-    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-slide-up">
-        <div className="bg-slate-900/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10 ring-4 ring-black/5">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"/>
-            <span className="font-bold text-sm">{message}</span>
-            <button onClick={onClose} className="ml-2 hover:text-emerald-400 opacity-50 hover:opacity-100 transition-opacity"><XCircle size={16}/></button>
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-slide-up w-[90%] md:w-auto">
+        <div className="bg-slate-900/90 backdrop-blur-md text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-white/10 ring-4 ring-black/5">
+            <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"/>
+                <span className="font-bold text-sm leading-tight">{message}</span>
+            </div>
+            <button onClick={onClose} className="hover:text-emerald-400 opacity-50 hover:opacity-100 transition-opacity shrink-0"><XCircle size={20}/></button>
         </div>
     </div>
 );
@@ -63,7 +65,7 @@ const Toast = ({ message, onClose }: { message: string, onClose: () => void }) =
 const AddFriendModal = ({ onClose }: { onClose: () => void }) => {
     const [code, setCode] = useState('');
     const handleSend = () => {
-        p2p.sendFriendRequest(code);
+        p2p.sendFriendRequest(code.trim());
         onClose();
     };
     return (
@@ -131,17 +133,24 @@ const App = () => {
           setToast("Request sent waiting for them to reply");
           const t = setTimeout(() => {
               setToast(null);
-              // Reset status locally if needed, but usually not required as UI just reacts to transition
           }, 3000);
           return () => clearTimeout(t);
       }
       if (status === 'error') {
           setToast("Connection failed. Check ID and try again.");
-          setTimeout(() => setToast(null), 3000);
+          setTimeout(() => setToast(null), 4000);
+      }
+      if (status === 'not_found') {
+          setToast("User not found. Check the Signal Code.");
+          setTimeout(() => setToast(null), 4000);
+      }
+      if (status === 'self_connect') {
+          setToast("You cannot add yourself.");
+          setTimeout(() => setToast(null), 4000);
       }
       if (status === 'taken') {
           setToast("ID Taken / Unavailable.");
-          setTimeout(() => setToast(null), 3000);
+          setTimeout(() => setToast(null), 4000);
       }
   }, [status]);
 
@@ -327,11 +336,11 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                     </div>
                     {/* User Code Display */}
                     <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl flex items-center justify-between group cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" onClick={() => navigator.clipboard.writeText(user.id)}>
-                        <div className="flex flex-col min-w-0">
+                        <div className="flex flex-col min-w-0 flex-1 mr-2">
                             <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Your Signal Code</span>
-                            <span className="font-mono text-sm font-bold text-vibe-primary truncate">{user.id}</span>
+                            <span className="font-mono text-sm font-bold text-vibe-primary break-all">{user.id}</span>
                         </div>
-                        <div className="p-2 text-slate-400 group-hover:text-vibe-primary transition-colors">
+                        <div className="p-2 text-slate-400 group-hover:text-vibe-primary transition-colors shrink-0">
                             <Copy size={16}/>
                         </div>
                     </div>
@@ -365,7 +374,7 @@ const Dashboard = ({ user, friends, inbox, setInbox, setView, setActiveFriend, u
                 </div>
 
                 <div className="p-4 bg-white/20 dark:bg-black/20 border-t dark:border-slate-800">
-                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Add Friend Code..." icon={<UserPlus size={16}/>} onIconClick={() => { p2p.sendFriendRequest(search); setSearch(''); }} className="!rounded-xl" />
+                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Add Friend Code..." icon={<UserPlus size={16}/>} onIconClick={() => { p2p.sendFriendRequest(search.trim()); setSearch(''); }} className="!rounded-xl" />
                 </div>
             </aside>
 

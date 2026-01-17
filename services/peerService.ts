@@ -51,11 +51,25 @@ class P2PService {
         if (!this._user) return;
         this.callbacks = { ...this.callbacks, ...callbacks };
 
-        if (this.peer) return;
+        if (this.peer) {
+            // If peer exists but is disconnected, try reconnecting
+            if (this.peer.disconnected && !this.peer.destroyed) {
+                this.peer.reconnect();
+            }
+            return;
+        }
 
         try {
             const { default: Peer } = await import('peerjs');
-            this.peer = new Peer(this._user.id);
+            this.peer = new Peer(this._user.id, {
+                debug: 1, // 0=none, 1=errors, 2=warnings, 3=all
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:global.stun.twilio.com:3478' }
+                    ]
+                }
+            });
 
             this.peer.on('open', (id: string) => {
                 this.callbacks.onStatus('ready');
@@ -66,9 +80,38 @@ class P2PService {
                 this.setupConnection(conn);
             });
 
+            this.peer.on('disconnected', () => {
+                console.warn("Peer disconnected from signaling server. Reconnecting...");
+                if (this.peer && !this.peer.destroyed) {
+                    this.peer.reconnect();
+                }
+            });
+
+            this.peer.on('close', () => {
+                this.callbacks.onStatus('offline');
+                this.peer = null;
+            });
+
             this.peer.on('error', (err: any) => {
-                if (err.type === 'unavailable-id') this.callbacks.onStatus('taken');
-                else this.callbacks.onStatus('error');
+                console.error("P2P Error:", err);
+                if (err.type === 'unavailable-id') {
+                    this.callbacks.onStatus('taken');
+                }
+                else if (err.type === 'peer-unavailable') {
+                    this.callbacks.onStatus('not_found');
+                }
+                else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
+                    // Try to reconnect if it's a network/server issue
+                     if (this.peer && !this.peer.destroyed && this.peer.disconnected) {
+                         console.warn("Network error, trying to reconnect...");
+                         this.peer.reconnect();
+                     } else {
+                         this.callbacks.onStatus('error');
+                     }
+                }
+                else {
+                    this.callbacks.onStatus('error');
+                }
             });
         } catch (e) {
             console.error("P2P Engine Failure", e);
@@ -93,6 +136,11 @@ class P2PService {
                 this.isHostMode = false; 
                 this.callbacks.onStatus('ready');
             }
+        });
+        
+        conn.on('error', (err: any) => {
+            console.error("Connection error:", err);
+            conn.close();
         });
     }
 
@@ -143,12 +191,24 @@ class P2PService {
 
     async sendFriendRequest(targetId: string) {
         if (!this.peer) return;
-        const conn = this.peer.connect(targetId);
-        conn.on('open', () => {
-            conn.send({ type: 'FRIEND_REQ', user: this._user });
-            this.callbacks.onStatus('req_sent');
-            setTimeout(() => conn.close(), 2000); // Close after sending
-        });
+        const cleanId = targetId.trim();
+        
+        if (cleanId === this._user?.id) {
+            this.callbacks.onStatus('self_connect');
+            return;
+        }
+
+        try {
+            const conn = this.peer.connect(cleanId);
+            conn.on('open', () => {
+                conn.send({ type: 'FRIEND_REQ', user: this._user });
+                this.callbacks.onStatus('req_sent');
+                setTimeout(() => conn.close(), 2000); // Close after sending
+            });
+            // Global error handler will catch if peer is unavailable
+        } catch (e) {
+            console.error("Send Req Error", e);
+        }
     }
 
     // New method to manually accept friend requests from Inbox
@@ -158,11 +218,15 @@ class P2PService {
         this.callbacks.onFriendAdded(targetUser);
         
         // 2. Send Acceptance back
-        const conn = this.peer.connect(targetUser.id);
-        conn.on('open', () => {
-            conn.send({ type: 'FRIEND_ACCEPT', user: this._user });
-            setTimeout(() => conn.close(), 2000);
-        });
+        try {
+            const conn = this.peer.connect(targetUser.id);
+            conn.on('open', () => {
+                conn.send({ type: 'FRIEND_ACCEPT', user: this._user });
+                setTimeout(() => conn.close(), 2000);
+            });
+        } catch (e) {
+            console.error("Confirm Req Error", e);
+        }
     }
 
     acceptFriend(conn: any) {
