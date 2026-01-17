@@ -49,6 +49,41 @@ const getLinkMetadata = (text: string): { url: string, type: 'youtube' | 'spotif
     return null;
 };
 
+// --- COMPONENTS ---
+const Toast = ({ message, onClose }: { message: string, onClose: () => void }) => (
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-slide-up">
+        <div className="bg-slate-900/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10 ring-4 ring-black/5">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"/>
+            <span className="font-bold text-sm">{message}</span>
+            <button onClick={onClose} className="ml-2 hover:text-emerald-400 opacity-50 hover:opacity-100 transition-opacity"><XCircle size={16}/></button>
+        </div>
+    </div>
+);
+
+const AddFriendModal = ({ onClose }: { onClose: () => void }) => {
+    const [code, setCode] = useState('');
+    const handleSend = () => {
+        p2p.sendFriendRequest(code);
+        onClose();
+    };
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in">
+            <Card className="w-full max-w-sm !p-6 space-y-4 !rounded-2xl border-2 border-white/20 relative shadow-2xl bg-white dark:bg-slate-900">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-rose-500"><XCircle size={20}/></button>
+                <div className="text-center pt-2">
+                    <div className="w-16 h-16 bg-vibe-soft rounded-full flex items-center justify-center mx-auto mb-3 text-vibe-primary">
+                        <UserPlus size={32} />
+                    </div>
+                    <h3 className="text-xl font-black">Expand Your Circle</h3>
+                    <p className="text-xs text-slate-400 font-medium mt-1">Enter your friend's Signal Code to connect.</p>
+                </div>
+                <Input value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. alex-X92F" className="text-center text-lg !py-3 font-mono" />
+                <Button onClick={handleSend} disabled={!code.trim()} className="w-full !py-3 !text-sm">Send Request</Button>
+            </Card>
+        </div>
+    );
+};
+
 // --- MAIN APP ---
 const App = () => {
   const [user, setUser] = useState<User | null>(p2p.user);
@@ -60,6 +95,7 @@ const App = () => {
   const [activeSessions, setActiveSessions] = useState<string[]>([]);
   const [chatHistory, setChatHistory] = useState<Record<string, Message[]>>({});
   const [isHostingSession, setIsHostingSession] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -88,6 +124,26 @@ const App = () => {
         if (view === 'auth') setView('dash');
     }
   }, [user]);
+
+  // Handle Toast Notifications
+  useEffect(() => {
+      if (status === 'req_sent') {
+          setToast("Request sent waiting for them to reply");
+          const t = setTimeout(() => {
+              setToast(null);
+              // Reset status locally if needed, but usually not required as UI just reacts to transition
+          }, 3000);
+          return () => clearTimeout(t);
+      }
+      if (status === 'error') {
+          setToast("Connection failed. Check ID and try again.");
+          setTimeout(() => setToast(null), 3000);
+      }
+      if (status === 'taken') {
+          setToast("ID Taken / Unavailable.");
+          setTimeout(() => setToast(null), 3000);
+      }
+  }, [status]);
 
   const updateUserSettings = (newSettings: Partial<User['settings']>) => {
       if (!user) return;
@@ -121,6 +177,8 @@ const App = () => {
   
   return (
     <div className={`h-full flex flex-col transition-colors duration-500 theme-${user.settings.theme} ${user.settings.darkMode ? 'dark bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'} overflow-hidden`}>
+        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+        
         {view === 'dash' && (
             <Dashboard 
                 user={user} 
@@ -717,6 +775,7 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
     const [input, setInput] = useState('');
     const [gameActive, setGameActive] = useState(false);
     const [showSketch, setShowSketch] = useState(false);
+    const [showAddFriend, setShowAddFriend] = useState(false); // New state for modal
     
     // Voice & Media
     const [recording, setRecording] = useState(false);
@@ -884,6 +943,14 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
                          <div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span><span className="text-[9px] font-black uppercase opacity-40">Live</span></div>
                     </div>
                 </div>
+                {/* New Add Friend Button in Room Header */}
+                <button 
+                    onClick={() => setShowAddFriend(true)} 
+                    className="p-2 bg-slate-100 dark:bg-white/5 hover:bg-emerald-500 hover:text-white rounded-xl transition-colors text-slate-500"
+                    title="Add Friend"
+                >
+                    <UserPlus size={20}/>
+                </button>
             </header>
 
             {/* Chat Area */}
@@ -1006,6 +1073,7 @@ const Room = ({ user, friend, friendsList, onBack, initialMessages, onUpdateHist
             {/* Overlays */}
             {gameActive && <PongGame isHost={isHost} p1Name={isHost ? user.username : friend?.username} p2Name={!isHost ? user.username : friend?.username} onClose={() => { setGameActive(false); if(isHost) p2p.send({ type: 'GAME_SYNC', payload: { gameStatus: 'ended' }}); }} />}
             {showSketch && <Sketchpad onSend={(blob) => send('image', undefined, blob)} onClose={() => setShowSketch(false)} />}
+            {showAddFriend && <AddFriendModal onClose={() => setShowAddFriend(false)} />}
         </div>
     );
 };
