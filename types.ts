@@ -1,3 +1,4 @@
+
 export type ThemeColor = 'violet' | 'rose' | 'emerald' | 'sky' | 'amber';
 
 export interface User {
@@ -9,7 +10,7 @@ export interface User {
     showLastSeen: boolean;
     readReceipts: boolean;
     theme: ThemeColor;
-    aiTone: 'playful' | 'serious';
+    aiEnabled: boolean;
   };
 }
 
@@ -19,47 +20,46 @@ export interface Friend {
   status: 'online' | 'offline';
 }
 
+export interface MusicItem {
+  id: string;
+  url: string;
+  addedBy: string;
+  timestamp: number;
+  title?: string;
+  artist?: string;
+}
+
 export interface Message {
   id: string;
   sender_id: string;
   sender_name: string;
   content?: string;
   timestamp: number;
-  type: 'text' | 'ai' | 'image' | 'voice';
-  media_url?: string; // base64 payload
+  type: 'text' | 'ai' | 'image' | 'voice' | 'sketch' | 'music';
+  media_url?: string; 
+  music_item?: MusicItem;
   isRead?: boolean;
-  isDeleted?: boolean;
   isEdited?: boolean;
-}
-
-export interface PlaylistItem {
-  id: string;
-  url: string;
-  title: string;
-  platform: 'youtube' | 'spotify' | 'apple' | 'generic';
-  addedBy: string;
-  thumbnail?: string;
-}
-
-export interface RoomSettings {
-  aiEnabled: boolean;
-  themeSync: boolean;
-  showLastSeen: boolean;
-  readReceipts: boolean;
+  replyTo?: {
+    id: string;
+    sender: string;
+    content: string;
+  };
 }
 
 export interface PongState {
   ball: { x: number; y: number; dx: number; dy: number };
-  p1Y: number; // Host paddle (0-100)
-  p2Y: number; // Guest paddle (0-100)
+  p1Y: number; // Host paddle
+  p2Y: number; // Guest paddle
   score: { p1: number; p2: number };
   gameStatus: 'intro' | 'countdown' | 'playing' | 'ended';
   countdown: number;
-  winner?: 'host' | 'guest';
+  winnerName?: string;
 }
 
-export interface GameState {
-  board: (string | null)[];
-  status: 'waiting' | 'active' | 'won' | 'draw';
-  turn?: string; 
+export interface InboxItem {
+  type: 'friend_request' | 'room_invite';
+  fromUser: User;
+  roomId?: string; // For room invites
+  roomName?: string;
 }

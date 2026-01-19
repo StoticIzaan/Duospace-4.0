@@ -1,285 +1,203 @@
-import { User, Message } from '../types';
+
+import { User, Message, InboxItem } from '../types';
 
 class P2PService {
     private peer: any = null;
-    private connections: any[] = []; // Array to hold connections
+    private connections: any[] = [];
     private _user: User | null = null;
     public isHostMode: boolean = false;
     
+    // Callbacks for UI updates
     private callbacks = {
-        onMessage: (m: Message) => {},
         onStatus: (s: string) => {},
-        onInbox: (req: any) => {},
-        onFriendAdded: (friend: any) => {},
-        onConnectionsChanged: (conns: string[]) => {}
+        onInbox: (item: InboxItem) => {},
+        onMessage: (m: Message) => {},
+        onMessageUpdate: (data: { id: string, action: 'edit' | 'delete', content?: string }) => {},
+        onFriendUpdate: (f: any) => {}, 
+        onRoomJoined: (hostId: string) => {},
+        onLeave: () => {}
     };
 
     constructor() {
-        const saved = localStorage.getItem('duospace_user_v5');
-        if (saved) this._user = JSON.parse(saved);
+        this.loadUser();
+    }
+
+    private loadUser() {
+        try {
+            const saved = localStorage.getItem('duospace_user_v6');
+            if (saved) this._user = JSON.parse(saved);
+        } catch (e) { console.error(e); }
     }
 
     get user() { return this._user; }
 
     async register(username: string): Promise<User> {
-        const cleanName = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanName.length < 2) throw new Error("Identity too short");
-        
+        const cleanName = username.trim().substring(0, 12);
         const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const id = `${cleanName}-${suffix}`;
+        const id = `${cleanName.replace(/\s/g, '')}-${suffix}`;
         
         const user: User = {
             id,
-            username: username.trim(),
+            username: cleanName,
             avatarColor: 'violet',
             settings: { 
                 darkMode: true, 
                 showLastSeen: true, 
                 readReceipts: true, 
                 theme: 'violet', 
-                aiTone: 'playful' 
+                aiEnabled: true 
             }
         };
 
         this._user = user;
-        localStorage.setItem('duospace_user_v5', JSON.stringify(user));
+        localStorage.setItem('duospace_user_v6', JSON.stringify(user));
         return user;
     }
 
-    async init(callbacks: Partial<typeof this.callbacks>) {
+    async init(cbs: any) {
         if (!this._user) return;
-        this.callbacks = { ...this.callbacks, ...callbacks };
+        this.callbacks = { ...this.callbacks, ...cbs };
 
-        if (this.peer) {
-            if (this.peer.disconnected && !this.peer.destroyed) {
-                this.peer.reconnect();
-            }
-            return;
-        }
+        if (this.peer && !this.peer.destroyed) return;
 
         try {
             const { default: Peer } = await import('peerjs');
-            this.peer = new Peer(this._user.id, {
-                debug: 1,
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:global.stun.twilio.com:3478' }
-                    ]
-                }
-            });
+            this.peer = new Peer(this._user.id, { debug: 1 });
 
-            this.peer.on('open', (id: string) => {
-                this.callbacks.onStatus('ready');
-            });
-
+            this.peer.on('open', () => this.callbacks.onStatus('online'));
+            
             this.peer.on('connection', (conn: any) => {
-                this.isHostMode = true;
                 this.setupConnection(conn);
             });
 
-            this.peer.on('disconnected', () => {
-                console.warn("Peer disconnected. Reconnecting...");
-                if (this.peer && !this.peer.destroyed) {
-                    this.peer.reconnect();
-                }
-            });
-
-            this.peer.on('close', () => {
-                this.callbacks.onStatus('offline');
-                this.peer = null;
-            });
-
             this.peer.on('error', (err: any) => {
-                console.error("P2P Error:", err);
-                if (err.type === 'unavailable-id') {
-                    this.callbacks.onStatus('taken');
-                }
-                else if (err.type === 'peer-unavailable') {
-                    this.callbacks.onStatus('not_found');
-                }
-                else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
-                     if (this.peer && !this.peer.destroyed && this.peer.disconnected) {
-                         this.peer.reconnect();
-                     } else {
-                         this.callbacks.onStatus('error');
-                     }
-                }
+                console.warn("P2P Error:", err);
+                if (err.type === 'peer-unavailable') this.callbacks.onStatus('not_found');
+                else this.callbacks.onStatus('error');
             });
-        } catch (e) {
-            console.error("P2P Engine Failure", e);
-        }
+
+            this.peer.on('disconnected', () => {
+                if (this.peer && !this.peer.destroyed) this.peer.reconnect();
+            });
+
+        } catch (e) { console.error("Peer Init Failed", e); }
     }
 
     private setupConnection(conn: any) {
         conn.on('open', () => {
             if (!this.connections.find(c => c.peer === conn.peer)) {
                 this.connections.push(conn);
-                this.emitConnections();
             }
-            this.callbacks.onStatus('connected');
         });
 
         conn.on('data', (data: any) => this.handleData(conn, data));
-        
+
         conn.on('close', () => {
             this.connections = this.connections.filter(c => c.peer !== conn.peer);
-            this.emitConnections();
-            if (this.connections.length === 0) {
-                this.isHostMode = false; 
-                this.callbacks.onStatus('ready');
-            }
-        });
-        
-        conn.on('error', (err: any) => {
-            console.error("Connection error:", err);
-            conn.close();
+            this.callbacks.onLeave(); 
         });
     }
 
     private handleData(conn: any, data: any) {
-        // Log incoming data types for debugging
-        console.log("Received P2P Data:", data.type);
-        
         switch (data.type) {
             case 'FRIEND_REQ':
-                this.callbacks.onInbox({ type: 'friend_request', user: data.user });
+                this.callbacks.onInbox({ type: 'friend_request', fromUser: data.user });
                 break;
             case 'FRIEND_ACCEPT':
-                this.callbacks.onFriendAdded(data.user);
+                this.callbacks.onFriendUpdate(data.user);
                 break;
             case 'ROOM_INVITE':
-                this.callbacks.onInbox({ type: 'room', conn, user: data.user, roomId: data.roomId });
+                this.callbacks.onInbox({ type: 'room_invite', fromUser: data.user, roomId: data.roomId, roomName: data.roomName });
                 break;
             case 'CHAT':
                 this.callbacks.onMessage(data.msg);
-                this.relay(data, conn);
+                if (this.isHostMode) this.broadcast(data, conn.peer); 
+                break;
+            case 'MSG_UPDATE':
+                this.callbacks.onMessageUpdate(data.payload);
+                if (this.isHostMode) this.broadcast(data, conn.peer);
                 break;
             case 'GAME_SYNC':
             case 'GAME_INPUT':
-            case 'PLAYLIST_SYNC':
-            case 'MSG_UPDATE':
-            case 'ROOM_SETTINGS':
+            case 'MUSIC_ADD':
                 window.dispatchEvent(new CustomEvent(`p2p_${data.type.toLowerCase()}`, { detail: data.payload }));
-                this.relay(data, conn);
+                if (this.isHostMode) this.broadcast(data, conn.peer);
                 break;
         }
     }
 
-    private relay(data: any, sourceConn: any) {
-        if (this.isHostMode) {
-            this.connections.forEach(otherConn => {
-                if (otherConn.peer !== sourceConn.peer && otherConn.open) {
-                    otherConn.send(data);
-                }
-            });
-        }
-    }
+    // --- Actions ---
 
-    private emitConnections() {
-        this.callbacks.onConnectionsChanged(this.connections.map(c => c.peer));
-    }
-
-    getActiveConnections() {
-        return this.connections.map(c => c.peer);
-    }
-
-    async sendFriendRequest(targetId: string) {
-        if (!this.peer) return;
-        const cleanId = targetId.trim();
-        
-        if (cleanId === this._user?.id) {
-            this.callbacks.onStatus('self_connect');
-            return;
-        }
-
-        try {
-            const conn = this.peer.connect(cleanId);
-            conn.on('open', () => {
-                conn.send({ type: 'FRIEND_REQ', user: this._user });
-                this.callbacks.onStatus('req_sent');
-                setTimeout(() => conn.close(), 3000); 
-            });
-        } catch (e) {
-            console.error("Send Req Error", e);
-        }
-    }
-
-    confirmFriendReq(targetUser: User) {
-        if (!this.peer) return;
-        this.callbacks.onFriendAdded(targetUser);
-        
-        try {
-            const conn = this.peer.connect(targetUser.id);
-            conn.on('open', () => {
-                conn.send({ type: 'FRIEND_ACCEPT', user: this._user });
-                setTimeout(() => conn.close(), 3000);
-            });
-        } catch (e) {
-            console.error("Confirm Req Error", e);
-        }
-    }
-
-    async inviteToRoom(friendId: string, roomId: string) {
-        if (!this.peer) return;
-        
-        const existingConn = this.connections.find(c => c.peer === friendId);
-        if (existingConn && existingConn.open) {
-             existingConn.send({ type: 'ROOM_INVITE', user: this._user, roomId });
-             return;
-        }
-
-        try {
-            const conn = this.peer.connect(friendId);
-            conn.on('open', () => {
-                conn.send({ type: 'ROOM_INVITE', user: this._user, roomId });
-                setTimeout(() => conn.close(), 3000); 
-            });
-        } catch(e) {
-            console.error("Invite Error", e);
-        }
-    }
-
-    connectToRoom(hostId: string) {
-        const existing = this.connections.find(c => c.peer === hostId);
-        if (existing && existing.open) return;
-
-        this.isHostMode = false;
-        const conn = this.peer.connect(hostId);
-        this.setupConnection(conn);
-    }
-
-    send(data: any) {
-        this.connections.forEach(conn => {
-            if (conn.open) {
-                conn.send(data);
-            }
+    sendFriendRequest(targetId: string) {
+        if (!this.peer || !this._user) return;
+        const conn = this.peer.connect(targetId);
+        conn.on('open', () => {
+            conn.send({ type: 'FRIEND_REQ', user: this._user });
+            setTimeout(() => conn.close(), 2000);
         });
     }
 
-    disconnectPeer(peerId: string) {
-        const conn = this.connections.find(c => c.peer === peerId);
-        if (conn) {
-            conn.close();
-            this.connections = this.connections.filter(c => c.peer !== peerId);
-            this.emitConnections();
-        }
+    acceptFriend(targetId: string) {
+        if (!this.peer || !this._user) return;
+        const conn = this.peer.connect(targetId);
+        conn.on('open', () => {
+            conn.send({ type: 'FRIEND_ACCEPT', user: this._user });
+            setTimeout(() => conn.close(), 2000);
+        });
+        return true; 
     }
 
-    disconnect() {
+    inviteToRoom(friendId: string, roomName: string) {
+        const conn = this.connections.find(c => c.peer === friendId);
+        if (conn && conn.open) {
+            // Already connected?
+            return;
+        }
+        // Open new connection just to invite
+        const inviteConn = this.peer.connect(friendId);
+        inviteConn.on('open', () => {
+            inviteConn.send({ type: 'ROOM_INVITE', user: this._user, roomId: this._user?.id, roomName });
+            setTimeout(() => inviteConn.close(), 2000);
+        });
+    }
+
+    joinRoom(hostId: string) {
+        this.disconnectAll(); // Leave current
+        this.isHostMode = false;
+        const conn = this.peer.connect(hostId, { reliable: true });
+        this.setupConnection(conn);
+        this.callbacks.onRoomJoined(hostId);
+    }
+
+    createRoom() {
+        this.disconnectAll();
+        this.isHostMode = true;
+        this.callbacks.onRoomJoined(this._user?.id || '');
+    }
+
+    leaveRoom() {
+        this.disconnectAll();
+        this.callbacks.onLeave();
+    }
+
+    broadcast(data: any, excludePeerId?: string) {
+        this.connections.forEach(c => {
+            if (c.peer !== excludePeerId && c.open) c.send(data);
+        });
+    }
+
+    send(data: any) {
+        this.broadcast(data);
+    }
+
+    private disconnectAll() {
         this.connections.forEach(c => c.close());
         this.connections = [];
-        this.isHostMode = false;
-        this.emitConnections();
     }
-    
+
     destroy() {
-        this.disconnect();
-        if (this.peer) {
-            this.peer.destroy();
-            this.peer = null;
-        }
-        this._user = null;
+        this.disconnectAll();
+        if (this.peer) this.peer.destroy();
     }
 }
 

@@ -1,4 +1,3 @@
-
 import { Peer, DataConnection } from 'peerjs';
 import { User } from './types';
 
@@ -29,7 +28,7 @@ class P2PService {
             settings: { 
                 theme: 'violet', 
                 darkMode: true, 
-                aiTone: 'playful',
+                aiEnabled: true,
                 showLastSeen: true,
                 readReceipts: true
             }
