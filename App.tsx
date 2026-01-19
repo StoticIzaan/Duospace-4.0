@@ -418,6 +418,12 @@ export default function App() {
     };
 
     const leaveSpace = () => {
+        p2p.leaveRoom();
+        setActiveRoomId(null);
+        localStorage.removeItem('duo_active_room');
+        localStorage.removeItem('duo_active_room_name');
+        setMessages([]);
+        setMusicList([]);
         setView('home'); 
     };
 
@@ -535,87 +541,102 @@ export default function App() {
     );
 
     if (view === 'home') return (
-        <div className={`h-full flex flex-col p-4 max-w-lg mx-auto transition-colors ${user?.settings.darkMode ? 'dark bg-slate-900 text-white' : 'bg-slate-50 text-slate-900'}`}>
-            {toast && <div className="fixed top-4 left-0 right-0 flex justify-center z-50"><div className="bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg animate-in fade-in slide-in-from-top-2">{toast}</div></div>}
-            
-            <header className="flex justify-between items-center py-6">
-                <div>
-                    <h1 className="text-2xl font-black uppercase">{user?.username}</h1>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">My Code: {user?.id}</p>
-                </div>
-                <button onClick={() => { navigator.clipboard.writeText(user!.id); setToast('Code copied!'); }}><Copy className="text-vibe-primary"/></button>
-            </header>
-
-            <div className="flex-1 space-y-6 overflow-y-auto">
-                <Card className="!p-6 space-y-4 border-2 border-vibe-primary/20">
-                    <div className="text-center space-y-2">
-                        <div className="w-14 h-14 bg-vibe rounded-2xl mx-auto flex items-center justify-center text-white"><Zap size={28} fill="currentColor"/></div>
-                        <h2 className="text-lg font-black uppercase">{activeRoomId ? 'Active Session' : 'Start a Space'}</h2>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">{activeRoomId ? 'Return to your private world' : 'Your private world awaits'}</p>
+        <div className={`h-full w-full transition-colors ${user?.settings.darkMode ? 'dark bg-slate-900 text-white' : 'bg-slate-50 text-slate-900'}`}>
+            <div className="h-full flex flex-col p-6 max-w-6xl mx-auto w-full">
+                {toast && <div className="fixed top-4 left-0 right-0 flex justify-center z-50"><div className="bg-slate-800 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg animate-in fade-in slide-in-from-top-2">{toast}</div></div>}
+                
+                <header className="flex justify-between items-center py-6">
+                    <div>
+                        <h1 className="text-2xl font-black uppercase">{user?.username}</h1>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">My Code: {user?.id}</p>
                     </div>
-                    {activeRoomId ? (
-                         <Button onClick={enterSpace} className="w-full !py-4">RETURN TO SPACE</Button>
-                    ) : (
-                         <div className="space-y-2">
-                             <Input id="spaceName" placeholder="Name your space..." className="text-center"/>
-                             <Button onClick={() => {
-                                 const el = document.getElementById('spaceName') as HTMLInputElement;
-                                 createSpace(el.value || 'My Space');
-                             }} className="w-full !py-4">CREATE DUOSPACE</Button>
-                         </div>
-                    )}
-                </Card>
+                    <button onClick={() => { navigator.clipboard.writeText(user!.id); setToast('Code copied!'); }}><Copy className="text-vibe-primary"/></button>
+                </header>
 
-                {inbox.length > 0 && (
-                    <div className="space-y-2">
-                        <h3 className="text-xs font-black uppercase text-slate-500">Inbox</h3>
-                        {inbox.map((item, i) => (
-                            <div key={i} className="p-4 bg-white dark:bg-slate-800 rounded-xl flex justify-between items-center shadow-sm">
-                                <div>
-                                    <p className="text-xs font-bold">{item.type === 'friend_request' ? 'Friend Request' : 'Space Invite'}</p>
-                                    <p className="text-[10px] uppercase text-slate-400">From {item.fromUser.username}</p>
+                <div className="flex-1 overflow-y-auto">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="space-y-6">
+                            <Card className="!p-8 space-y-6 border-2 border-vibe-primary/20">
+                                <div className="text-center space-y-2">
+                                    <div className="w-14 h-14 bg-vibe rounded-2xl mx-auto flex items-center justify-center text-white"><Zap size={28} fill="currentColor"/></div>
+                                    <h2 className="text-lg font-black uppercase">{activeRoomId ? 'Active Session' : 'Start a Space'}</h2>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold">{activeRoomId ? 'Return to your private world' : 'Your private world awaits'}</p>
                                 </div>
-                                <div className="flex gap-2">
-                                    <Button onClick={() => {
-                                        if (item.type === 'friend_request') {
-                                            if(p2p.acceptFriend(item.fromUser.id)) {
-                                                setFriends(prev => [...prev, {id: item.fromUser.id, username: item.fromUser.username, status: 'online'}]);
-                                            }
-                                        } else if (item.roomId) {
-                                            setActiveRoomId(item.roomId);
-                                            setSpaceName(item.roomName || 'DuoSpace');
-                                            localStorage.setItem('duo_active_room', item.roomId);
-                                            localStorage.setItem('duo_active_room_name', item.roomName || 'DuoSpace');
-                                            p2p.joinRoom(item.roomId);
-                                        }
-                                        setInbox(prev => prev.filter((_, idx) => idx !== i));
-                                    }} className="!py-1 !px-3">Accept</Button>
-                                    <button onClick={() => setInbox(prev => prev.filter((_, idx) => idx !== i))} className="text-rose-500"><XCircle size={20}/></button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                                {activeRoomId ? (
+                                    <Button onClick={enterSpace} className="w-full !py-4">RETURN TO SPACE</Button>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <Input id="spaceName" placeholder="Name your space..." className="text-center"/>
+                                        <Button onClick={() => {
+                                            const el = document.getElementById('spaceName') as HTMLInputElement;
+                                            createSpace(el.value || 'My Space');
+                                        }} className="w-full !py-4">CREATE DUOSPACE</Button>
+                                    </div>
+                                )}
+                            </Card>
 
-                <div className="space-y-2">
-                    <h3 className="text-xs font-black uppercase text-slate-500">Friends</h3>
-                    <div className="flex gap-2 mb-2">
-                        <Input id="friendCode" placeholder="Paste friend code..." className="!py-3" />
-                        <Button onClick={() => {
-                            const el = document.getElementById('friendCode') as HTMLInputElement;
-                            if(el.value) { p2p.sendFriendRequest(el.value); el.value = ''; setToast('Request Sent'); }
-                        }}>ADD</Button>
-                    </div>
-                    {friends.map(f => (
-                        <div key={f.id} className="p-4 bg-white dark:bg-slate-800 rounded-xl flex justify-between items-center shadow-sm">
-                            <span className="font-bold text-sm">{f.username}</span>
-                            <Badge color="bg-emerald-100 text-emerald-600">FRIEND</Badge>
+                            {inbox.length > 0 && (
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-black uppercase text-slate-500">Inbox</h3>
+                                    {inbox.map((item, i) => (
+                                        <div key={i} className="p-4 bg-white dark:bg-slate-800 rounded-xl flex justify-between items-center shadow-sm">
+                                            <div>
+                                                <p className="text-xs font-bold">{item.type === 'friend_request' ? 'Friend Request' : 'Space Invite'}</p>
+                                                <p className="text-[10px] uppercase text-slate-400">From {item.fromUser.username}</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <Button onClick={() => {
+                                                    if (item.type === 'friend_request') {
+                                                        if(p2p.acceptFriend(item.fromUser.id)) {
+                                                            setFriends(prev => [...prev, {id: item.fromUser.id, username: item.fromUser.username, status: 'online'}]);
+                                                        }
+                                                    } else if (item.roomId) {
+                                                        setActiveRoomId(item.roomId);
+                                                        setSpaceName(item.roomName || 'DuoSpace');
+                                                        localStorage.setItem('duo_active_room', item.roomId);
+                                                        localStorage.setItem('duo_active_room_name', item.roomName || 'DuoSpace');
+                                                        p2p.joinRoom(item.roomId);
+                                                    }
+                                                    setInbox(prev => prev.filter((_, idx) => idx !== i));
+                                                }} className="!py-1 !px-3">Accept</Button>
+                                                <button onClick={() => setInbox(prev => prev.filter((_, idx) => idx !== i))} className="text-rose-500"><XCircle size={20}/></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    ))}
+
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-black uppercase text-slate-500">Friends</h3>
+                            <div className="flex gap-2 mb-4">
+                                <Input id="friendCode" placeholder="Paste friend code..." className="!py-3" />
+                                <Button onClick={() => {
+                                    const el = document.getElementById('friendCode') as HTMLInputElement;
+                                    if(el.value) { p2p.sendFriendRequest(el.value); el.value = ''; setToast('Request Sent'); }
+                                }}>ADD</Button>
+                            </div>
+                            <div className="grid grid-cols-1 gap-3">
+                                {friends.map(f => (
+                                    <div key={f.id} className="p-4 bg-white dark:bg-slate-800 rounded-xl flex justify-between items-center shadow-sm">
+                                        <span className="font-bold text-sm">{f.username}</span>
+                                        <Badge color="bg-emerald-100 text-emerald-600">FRIEND</Badge>
+                                    </div>
+                                ))}
+                            </div>
+                            {friends.length === 0 && (
+                                <div className="text-center p-8 border-2 border-dashed border-slate-700/20 rounded-xl">
+                                    <p className="text-slate-400 font-bold text-xs uppercase">No friends yet</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="py-4 flex justify-center">
+                    <Button variant="danger" onClick={fullLogout} className="w-full md:w-auto md:px-12">LOG OUT</Button>
                 </div>
             </div>
-
-            <Button variant="danger" onClick={fullLogout} className="mt-4">LOG OUT</Button>
         </div>
     );
 
@@ -855,7 +876,8 @@ export default function App() {
                                     ))}
                                 </div>
                             </div>
-                            <Button variant="danger" onClick={fullLogout} className="w-full !py-4 mt-8">LOG OUT COMPLETELY</Button>
+                            <Button variant="secondary" onClick={leaveSpace} className="w-full !py-4 mb-2 mt-8">LEAVE SPACE (RETURN HOME)</Button>
+                            <Button variant="danger" onClick={fullLogout} className="w-full !py-4">LOG OUT COMPLETELY</Button>
                         </div>
                      </div>
                 )}
